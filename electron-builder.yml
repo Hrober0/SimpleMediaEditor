@@ -1,0 +1,26 @@
+appId: dev.mediaeditor.app
+productName: MediaEditor
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+# ffmpeg/ffprobe/yt-dlp are resolved at runtime (see src/main/binaries.ts).
+# Dropping binaries into build/bin ships them as the last-resort fallback.
+extraResources:
+  - from: build/bin
+    to: bin
+    filter:
+      - '**/*'
+win:
+  target:
+    - nsis
+linux:
+  target:
+    - AppImage
+    - deb
+  category: AudioVideo
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
