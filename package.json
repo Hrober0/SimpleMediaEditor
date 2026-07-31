@@ -14,7 +14,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "build": "npm run typecheck && electron-vite build",
-    "package": "npm run build && electron-builder"
+    "package": "npm run build && cross-env NODE_OPTIONS=--experimental-require-module electron-builder"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
@@ -22,6 +22,7 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "4.7.0",
+    "cross-env": "^10.1.0",
     "electron": "41.7.1",
     "electron-builder": "26.15.3",
     "electron-vite": "3.1.0",

@@ -43,6 +43,12 @@ npm run build            # production bundle
 npm run package          # electron-builder for the current platform
 ```
 
+`package` runs electron-builder with `--experimental-require-module`. app-builder-lib
+26.15.x is CommonJS but requires `@noble/hashes` 2.x, which is ESM only, so the build
+dies with `ERR_REQUIRE_ESM` on Node older than 22.12. The flag is a no-op once
+everyone is on 22.12 or later, and it can be dropped when electron-builder fixes the
+import.
+
 ## Layout
 
 ```
