@@ -9,8 +9,10 @@ import { createRoot } from 'react-dom/client';
 import { MantineProvider } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { App } from './App';
+import { MODULE_REGISTRY } from './modules/registry';
 import { EnvironmentProvider } from './state/EnvironmentProvider';
 import { JobsProvider } from './state/JobsProvider';
+import { NavigationProvider } from './state/NavigationProvider';
 import { SettingsProvider } from './state/SettingsProvider';
 import { theme } from './theme';
 
@@ -25,7 +27,9 @@ createRoot(container).render(
       <EnvironmentProvider>
         <SettingsProvider>
           <JobsProvider>
-            <App />
+            <NavigationProvider initialModuleId={MODULE_REGISTRY[0]?.id ?? ''}>
+              <App />
+            </NavigationProvider>
           </JobsProvider>
         </SettingsProvider>
       </EnvironmentProvider>

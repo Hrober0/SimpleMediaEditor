@@ -108,6 +108,9 @@ New feature → new folder under `src/renderer/modules/`, exporting a `UtilityMo
 descriptor, plus one line in `registry.ts`. The shell reads the registry; it does not
 know about individual modules. Do not add feature-specific branching to `App.tsx`.
 
+A module never imports from another module. Anything two of them need belongs in
+`renderer/src/components/`, `renderer/src/state/`, or `src/shared/`.
+
 ## Conventions
 
 - No `any`. No non-null `!` to silence the compiler — narrow properly.
@@ -117,6 +120,112 @@ know about individual modules. Do not add feature-specific branching to `App.tsx
 - Format support is data, not code: extend the `SupportedFormat` table rather than
   adding `if (ext === ...)` checks.
 - Keep media-domain knowledge in `src/main/media/`, not in React components.
+
+## Naming
+
+Use plain, simple language. A name is the two or three words a teammate would use to
+describe the thing out loud, not an invented term.
+
+- No coined or clever names. If `downloadProgress` says it, do not write
+  `downloadTelemetryEnvelope`.
+- No abbreviations or invented acronyms. Write `selectedEntry`, not `selEnt`.
+- Do not encode the type or the implementation in the name: `jobs`, not `jobsArray`;
+  `isOpen`, not `openBooleanFlag`.
+- Do not repeat the surrounding context. Inside `CoverArtCard`, a header is `Header`,
+  not `CoverArtCardHeader`.
+- Booleans read as a question: `isLoading`, `hasCoverArt`, `canEdit`.
+- `on*` names a reaction to something that already happened: `onDrop`,
+  `onSelectionChange`. Something the code is asked to do gets a plain action name:
+  `saveTags`, `revealJobs`.
+- Keep the same word for the same concept everywhere. Do not mix `entry`, `item` and
+  `track` for one thing.
+- Never invent a fuzzy term for a simple behaviour. No `bestEffortSync`,
+  `smartRefresh`, `gracefulHandoff`. Say what it does: `retryOnceThenIgnore`. If it
+  cannot be named in two or three plain words, it is doing too much: split it.
+
+Comments explain **why**, never **what**. If a comment restates the code, delete it
+and fix the name instead. No section-label comments, no commented-out code, no TODOs
+without context, no file-header banners.
+
+## Renderer conventions
+
+### A JSX comment labelling a section means a missing component
+
+If a section needs a comment to say what it is (`{/* Toolbar */}`, `{/* Footer */}`),
+it should be its own component. Named components are self-documenting. This is about
+labels, not about the "why" comments the rest of this file asks for.
+
+### One component does one thing
+
+That thing fits in one sentence you could say out loud. "Shows what a URL points at."
+"Lets the user pick cover art." If the sentence needs an "and", or a "but only when",
+it is already two components.
+
+When a component grows, extract a new one rather than adding another branch, another
+flag, or another block of JSX. Signals that it is time:
+
+- The sentence describing it needs "and".
+- Props are turning into mode switches: `variant`, `isCompact`, `showFooter`.
+- Nested conditional JSX, or markup rendered in only one mode.
+- The file is long enough that the return statement does not fit on screen.
+
+Push logic out the same way. Shared state goes into a provider under `state/`, pure
+transforms into `src/shared/`, and process work into `src/main/`. A component body
+reads as a short list of named pieces, not as an algorithm.
+
+An extracted component stays in the same file while it is small and used only there.
+It moves into its own file in the module folder once it has its own props or state, or
+into `renderer/src/components/` once a second module needs it.
+
+### Reach for Mantine, then for the shared components, then write one
+
+`src/renderer/src/components/` holds what is shared across modules: `FailureAlert`,
+`PanelActions`, `DirectoryInput`, `JobsList`, `FileDropzone`. Check there before
+building a UI element, and check Mantine before that. A one-off variant is a prop or a
+style override on the shared component, never a fork of it into a module folder.
+
+Anything that accepts a dropped file uses `FileDropzone`, never Mantine's `Dropzone`
+directly. react-dropzone resolves dropped items through the File System Access API,
+and Electron cannot map the resulting `File` back to a path, so the drop arrives with
+an empty path and main refuses it. `FileDropzone` reads the files off the drop event
+instead.
+
+### Do not repeat the same styling
+
+Three elements carrying the same style props want a small named wrapper in the same
+file:
+
+```tsx
+<Fact>{formatDuration(seconds)}</Fact>
+<Fact>{formatBytes(bytes)}</Fact>
+
+function Fact({ children }: { children: ReactNode }): ReactNode {
+  return <Badge variant="light">{children}</Badge>;
+}
+```
+
+Prefer Mantine theme values and style props over inline CSS, so dark mode keeps
+working. Where a raw CSS value is unavoidable, use a Mantine variable
+(`var(--mantine-color-body)`), never a hardcoded colour.
+
+### A config object beats a ternary chain in JSX
+
+When what renders depends on several conditions, derive the props in TypeScript first
+and pass them in. Keep the JSX a single flat expression.
+
+```tsx
+// bad
+const alert = missing ? <Alert title="Missing" /> : failed ? <Alert title="Failed" /> : null;
+
+// good
+const alert = describeProblem(state);
+return alert ? <FailureAlert {...alert} /> : null;
+```
+
+## Writing style
+
+Do not use em dashes (`—`) or double hyphens (`--`) in comments, commit messages,
+documentation, UI copy, or replies. Use a comma, a colon, or rewrite the sentence.
 
 ## Verification
 

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import {
   AppShell,
   Button,
@@ -7,6 +7,7 @@ import {
   Indicator,
   Loader,
   NavLink,
+  ScrollArea,
   Stack,
   Text,
   Title,
@@ -14,10 +15,18 @@ import {
 import { IconListDetails } from '@tabler/icons-react';
 import { DependencyGate } from './components/DependencyGate';
 import { JobsDrawer } from './components/JobsDrawer';
+import { JobsList } from './components/JobsList';
+import {
+  JOBS_PANEL_BREAKPOINT,
+  JOBS_PANEL_WIDTH,
+  SHELL_HEADER_HEIGHT,
+  SHELL_NAVBAR_WIDTH,
+} from './layout';
 import { MODULE_REGISTRY } from './modules/registry';
 import { MODULE_SECTIONS, type UtilityModule } from './modules/types';
 import { useEnvironment } from './state/EnvironmentContext';
 import { useJobs } from './state/JobsContext';
+import { useNavigation } from './state/NavigationContext';
 
 /**
  * The shell. It renders whatever the module registry contains and knows nothing
@@ -25,8 +34,8 @@ import { useJobs } from './state/JobsContext';
  */
 export function App(): ReactNode {
   const { environment, missingBinaries } = useEnvironment();
-  const { activeCount, openDrawer } = useJobs();
-  const [activeModuleId, setActiveModuleId] = useState(MODULE_REGISTRY[0]?.id ?? '');
+  const { activeCount, revealJobs } = useJobs();
+  const { activeModuleId, showModule } = useNavigation();
 
   if (!environment) {
     return (
@@ -43,21 +52,34 @@ export function App(): ReactNode {
   const active = MODULE_REGISTRY.find((module) => module.id === activeModuleId);
 
   return (
-    <AppShell header={{ height: 56 }} navbar={{ width: 264, breakpoint: 'xs' }} padding="lg">
+    <AppShell
+      header={{ height: SHELL_HEADER_HEIGHT }}
+      navbar={{ width: SHELL_NAVBAR_WIDTH, breakpoint: 'xs' }}
+      // The jobs list stays on screen whenever the window is wide enough for it;
+      // below the breakpoint it collapses and the drawer takes over.
+      aside={{
+        width: JOBS_PANEL_WIDTH,
+        breakpoint: JOBS_PANEL_BREAKPOINT,
+        collapsed: { mobile: true, desktop: false },
+      }}
+      padding="lg"
+    >
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
           <Text fw={600}>MediaEditor</Text>
+          {/* Hidden where the side panel already shows the list. */}
           <Indicator
             label={activeCount}
             size={18}
             disabled={activeCount === 0}
             offset={4}
             color="blue"
+            hiddenFrom={JOBS_PANEL_BREAKPOINT}
           >
             <Button
               variant="default"
               leftSection={<IconListDetails size={16} />}
-              onClick={openDrawer}
+              onClick={revealJobs}
             >
               Jobs
             </Button>
@@ -83,7 +105,7 @@ export function App(): ReactNode {
                     label={module.title}
                     description={module.description}
                     leftSection={module.icon}
-                    onClick={() => setActiveModuleId(module.id)}
+                    onClick={() => showModule(module.id)}
                   />
                 ))}
               </Stack>
@@ -95,6 +117,21 @@ export function App(): ReactNode {
       <AppShell.Main>
         {active ? <ModulePanel module={active} /> : <Text c="dimmed">No module selected.</Text>}
       </AppShell.Main>
+
+      <AppShell.Aside p="sm">
+        <AppShell.Section>
+          <Group justify="space-between" align="center" mb="sm">
+            <Text fw={600}>Jobs</Text>
+            <Indicator label={activeCount} size={18} disabled={activeCount === 0} offset={-2}>
+              <IconListDetails size={18} />
+            </Indicator>
+          </Group>
+        </AppShell.Section>
+        {/* A long queue scrolls inside the panel, not with the page. */}
+        <AppShell.Section grow component={ScrollArea} type="auto">
+          <JobsList />
+        </AppShell.Section>
+      </AppShell.Aside>
 
       <JobsDrawer />
     </AppShell>

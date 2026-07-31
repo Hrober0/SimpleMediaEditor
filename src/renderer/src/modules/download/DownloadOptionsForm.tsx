@@ -18,6 +18,7 @@ import {
 } from '@shared/download';
 import { DirectoryInput } from '../../components/DirectoryInput';
 import { useSettings } from '../../state/SettingsContext';
+import { META_EDITOR } from '../types';
 
 interface DownloadOptionsFormProps {
   /**
@@ -107,6 +108,15 @@ export function DownloadOptionsForm({ showFilenameTemplate }: DownloadOptionsFor
         }}
         label="Restrict filenames to safe characters"
         description="Recommended: YouTube titles contain characters Windows rejects."
+      />
+
+      <Switch
+        checked={settings.openInMetaEditorAfterDownload}
+        onChange={(event) => {
+          void update({ openInMetaEditorAfterDownload: event.currentTarget.checked });
+        }}
+        label={`Open in ${META_EDITOR.title} when finished`}
+        description="A single video only: a playlist has no one file to open."
       />
     </Stack>
   );

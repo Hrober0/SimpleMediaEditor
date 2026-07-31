@@ -15,6 +15,13 @@ export interface UtilityModule {
   Panel: ComponentType;
 }
 
+/**
+ * The meta editor, named once. Another module can send a file to it, and has to
+ * call it what the sidebar calls it — so both come from here rather than from a
+ * string repeated in two places, or from one module importing another.
+ */
+export const META_EDITOR = { id: 'tags', title: 'Media meta editor' } as const;
+
 export type ModuleSection = 'download' | 'edit' | 'batch' | 'tools';
 
 export interface SectionDescriptor {

@@ -1,6 +1,14 @@
 import { stat } from 'node:fs/promises';
-import { isAbsolute } from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
+import { extname, isAbsolute } from 'node:path';
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  shell,
+  type IpcMainInvokeEvent,
+} from 'electron';
 import { BINARY_DESCRIPTORS } from '@shared/binaries';
 import {
   AUDIO_QUALITIES,
@@ -18,10 +26,24 @@ import type {
   IpcRequest,
   IpcResponse,
 } from '@shared/ipc-contract';
+import { SUPPORTED_FORMATS, formatForExtension } from '@shared/media-types';
+import type { OpenedMedia } from '@shared/metadata';
 import { err, ok, type Result } from '@shared/result';
 import type { BinaryResolver } from './binaries';
 import { AppFailure, toErrorInfo } from './errors';
 import type { JobQueue } from './jobs/queue';
+import {
+  coverDirectory,
+  extractEmbeddedCover,
+  prepareCoverFromBytes,
+  prepareCoverFromFrame,
+  prepareCoverFromImage,
+  type CoverDeps,
+} from './media/cover-art';
+import { probeFile } from './media/probe';
+import { validateSaveTagsRequest } from './media/save-request';
+import { createTagWriteJob } from './media/tag-job';
+import { readTagValues } from './media/tags';
 import type { SettingsStore } from './settings-store';
 import { createDownloadJob } from './ytdlp/download';
 import { inspectUrl } from './ytdlp/inspect';
@@ -34,6 +56,16 @@ export interface IpcDeps {
 
 export function registerIpcHandlers(deps: IpcDeps): void {
   const { settings, binaries, queue } = deps;
+
+  /**
+   * ffmpeg and ffprobe are resolved per call rather than captured: a user can
+   * change either path in Settings while the app is running.
+   */
+  const coverDeps = (): CoverDeps => ({
+    ffmpegPath: binaries.require('ffmpeg'),
+    ffprobePath: binaries.require('ffprobe'),
+    coverDirectory: coverDirectory(app.getPath('temp')),
+  });
 
   handle('app:environment', () => ({
     appVersion: app.getVersion(),
@@ -69,6 +101,113 @@ export function registerIpcHandlers(deps: IpcDeps): void {
           : [{ name: 'All files', extensions: ['*'] }],
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+
+  handle('dialog:pickMediaFile', async (_request, event) => {
+    const result = await dialog.showOpenDialog(windowFrom(event), {
+      title: 'Choose a media file',
+      properties: ['openFile'],
+      // Built from the format table, so a new format needs no change here.
+      filters: mediaFileFilters(),
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+
+  handle('dialog:pickImage', async (_request, event) => {
+    const result = await dialog.showOpenDialog(windowFrom(event), {
+      title: 'Choose cover art',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tif', 'tiff'] },
+      ],
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+
+  handle('dialog:pickSaveTarget', async (request, event) => {
+    if (!isAbsolute(request.sourcePath)) throw new AppFailure('Expected an absolute path.');
+    const format = formatForExtension(request.sourcePath);
+    if (!format) throw new AppFailure('That file is not a format this app can write.');
+
+    const result = await dialog.showSaveDialog(windowFrom(event), {
+      title: 'Save a copy',
+      defaultPath: request.sourcePath,
+      // Only the source's own extension: a tag edit cannot change the container.
+      filters: [{ name: format.label, extensions: [format.ext] }],
+      properties: ['createDirectory', 'showOverwriteConfirmation'],
+    });
+    return result.canceled ? null : (result.filePath ?? null);
+  });
+
+  handle('media:probe', async (request) => {
+    try {
+      if (!isAbsolute(request.path)) throw new AppFailure('Expected an absolute path.');
+      if (!formatForExtension(request.path)) {
+        throw new AppFailure(
+          `${extname(request.path) || 'That file type'} is not a format this app can open.`,
+        );
+      }
+
+      const info = await probeFile(request.path, { ffprobePath: binaries.require('ffprobe') });
+      const opened: OpenedMedia = {
+        info,
+        tags: readTagValues(info.tags),
+        cover: await extractEmbeddedCover(info, coverDeps()),
+      };
+      return ok(opened);
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+  handle('media:prepareCover', async (request) => {
+    try {
+      if (!isAbsolute(request.imagePath)) throw new AppFailure('Expected an absolute path.');
+      return ok(await prepareCoverFromImage(request.imagePath, coverDeps()));
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+  // Main reads the clipboard rather than the renderer: a pasted image has no path,
+  // and this keeps the renderer holding neither the bytes nor a file.
+  handle('media:coverFromClipboard', async () => {
+    try {
+      const image = clipboard.readImage();
+      if (image.isEmpty()) {
+        throw new AppFailure(
+          'There is no image on the clipboard.',
+          'Copy an image itself, not a file: copying a file in the file manager puts its name on the clipboard, not its contents.',
+        );
+      }
+      return ok(await prepareCoverFromBytes(image.toPNG(), coverDeps()));
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+  handle('media:grabFrame', async (request) => {
+    try {
+      if (!isAbsolute(request.path)) throw new AppFailure('Expected an absolute path.');
+      return ok(await prepareCoverFromFrame(request.path, request.atSeconds, coverDeps()));
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+  handle('media:saveTags', (request) => {
+    try {
+      const validated = validateSaveTagsRequest(request, coverDirectory(app.getPath('temp')));
+      const job = queue.enqueue(
+        createTagWriteJob(validated, {
+          ffmpegPath: binaries.require('ffmpeg'),
+          ffprobePath: binaries.require('ffprobe'),
+        }),
+      );
+      return ok({ jobId: job.id });
+    } catch (error) {
+      return failure(error);
+    }
   });
 
   handle('ytdlp:inspect', async (request) => {
@@ -136,6 +275,22 @@ export function broadcast<K extends IpcEventChannel>(
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) window.webContents.send(channel, payload);
   }
+}
+
+/**
+ * Open-dialog filters derived from the format table, so adding a format is a data
+ * change rather than an edit here as well.
+ */
+function mediaFileFilters(): { name: string; extensions: string[] }[] {
+  const editable = SUPPORTED_FORMATS.filter((format) => format.editable);
+  const extensionsOf = (kind: 'audio' | 'video'): string[] =>
+    editable.filter((format) => format.kind === kind).map((format) => format.ext);
+
+  return [
+    { name: 'Audio and video', extensions: editable.map((format) => format.ext) },
+    { name: 'Audio', extensions: extensionsOf('audio') },
+    { name: 'Video', extensions: extensionsOf('video') },
+  ];
 }
 
 type Handler<K extends IpcInvokeChannel> = (

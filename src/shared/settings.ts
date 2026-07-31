@@ -12,6 +12,11 @@ export interface AppSettings {
   videoQuality: VideoQuality;
   filenameTemplate: string;
   restrictFilenames: boolean;
+  /**
+   * Whether a finished download opens in the meta editor. Only a single video
+   * does: a playlist has no one file the app could pick.
+   */
+  openInMetaEditorAfterDownload: boolean;
   /** How many jobs run at once across every module. */
   jobConcurrency: number;
 }
@@ -28,5 +33,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Windows rejects characters that YouTube titles are full of; on by default so
   // the same title produces a valid file on both platforms.
   restrictFilenames: true,
+  // Off by default: downloading a batch of music is the common case, and jumping
+  // into the editor after each one would interrupt it.
+  openInMetaEditorAfterDownload: false,
   jobConcurrency: 2,
 };

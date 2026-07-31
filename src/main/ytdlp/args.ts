@@ -105,7 +105,7 @@ function targetArgs(options: DownloadOptions): string[] {
       '--audio-quality',
       options.audioQuality,
       // Cover art and tags arrive already embedded, which is most of what the
-      // Tags module would otherwise have to do afterwards.
+      // meta editor would otherwise have to do afterwards.
       '--embed-thumbnail',
       '--embed-metadata',
       // yt-dlp would otherwise embed the thumbnail as PNG, which several players
@@ -123,7 +123,7 @@ function targetArgs(options: DownloadOptions): string[] {
     '--embed-metadata',
     // No --embed-thumbnail for mp4: yt-dlp needs AtomicParsley for the covr atom,
     // which is not one of the app's dependencies. Cover art for video is set in
-    // the Tags module through ffmpeg instead.
+    // the meta editor through ffmpeg instead.
   ];
 }
 

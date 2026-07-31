@@ -1,9 +1,10 @@
 import { join } from 'node:path';
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, screen, shell } from 'electron';
 import { BinaryResolver } from './binaries';
 import { errorMessage } from './errors';
 import { JobQueue } from './jobs/queue';
 import { broadcast, registerIpcHandlers } from './ipc';
+import { clearCoverDirectory, coverDirectory } from './media/cover-art';
 import { SettingsStore } from './settings-store';
 
 const settings = new SettingsStore();
@@ -32,6 +33,9 @@ async function start(): Promise<void> {
   await app.whenReady();
   await settings.load();
   await binaries.refresh();
+  // Cover art prepared in an earlier run is of no use to this one, and each one
+  // is a megabyte of temp space.
+  await clearCoverDirectory(coverDirectory(app.getPath('temp')));
 
   registerIpcHandlers({ settings, binaries, queue });
   queue.onChanged((jobs) => broadcast('jobs:changed', jobs));
@@ -43,12 +47,25 @@ async function start(): Promise<void> {
   });
 }
 
+/**
+ * Roomy enough for the sidebar, a full-width panel and the jobs list side by
+ * side — but never larger than the display, so a laptop does not open the window
+ * partly offscreen.
+ */
+const PREFERRED_WINDOW_SIZE = { width: 1600, height: 1000 };
+/** Left free around the window so it does not look maximized when it is not. */
+const SCREEN_MARGIN = 80;
+
 function createWindow(): void {
+  const { width: availableWidth, height: availableHeight } =
+    screen.getPrimaryDisplay().workAreaSize;
+
   const window = new BrowserWindow({
-    width: 1180,
-    height: 800,
+    width: Math.min(PREFERRED_WINDOW_SIZE.width, availableWidth - SCREEN_MARGIN),
+    height: Math.min(PREFERRED_WINDOW_SIZE.height, availableHeight - SCREEN_MARGIN),
     minWidth: 900,
     minHeight: 640,
+    center: true,
     // Avoids a white flash before Mantine has applied the colour scheme.
     show: false,
     backgroundColor: '#1a1b1e',

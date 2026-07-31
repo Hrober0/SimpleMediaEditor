@@ -25,7 +25,7 @@ export const DOWNLOAD_TARGETS: readonly DownloadTarget[] = [
     label: 'MP4 (video)',
     kind: 'video',
     ext: 'mp4',
-    note: 'Tags are embedded; cover art for MP4 is set in the Tags module.',
+    note: 'Tags are embedded; cover art for MP4 is set in the media meta editor.',
   },
 ];
 

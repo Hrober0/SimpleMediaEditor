@@ -1,13 +1,16 @@
 import { useCallback, useRef, useState, type ClipboardEvent, type ReactNode } from 'react';
-import { Button, Divider, Group, Stack, Text, TextInput } from '@mantine/core';
+import { Button, Divider, Group, Stack, TextInput } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { downloadTargetById, type UrlInspection } from '@shared/download';
 import { sanitizeFilename, stripKnownExtension } from '@shared/filenames';
 import type { ErrorInfo } from '@shared/result';
 import { api } from '../../api';
 import { FailureAlert } from '../../components/FailureAlert';
+import { PanelActions } from '../../components/PanelActions';
 import { useJobs } from '../../state/JobsContext';
+import { useNavigation } from '../../state/NavigationContext';
 import { useSettings } from '../../state/SettingsContext';
+import { META_EDITOR } from '../types';
 import { DownloadOptionsForm } from './DownloadOptionsForm';
 import { SourcePreview } from './SourcePreview';
 
@@ -17,7 +20,8 @@ import { SourcePreview } from './SourcePreview';
  */
 export function DownloadPanel(): ReactNode {
   const { settings } = useSettings();
-  const { openDrawer } = useJobs();
+  const { revealJobs, waitForJob } = useJobs();
+  const { showModuleWithFile } = useNavigation();
 
   const [url, setUrl] = useState('');
   const [inspection, setInspection] = useState<UrlInspection | null>(null);
@@ -76,6 +80,22 @@ export function DownloadPanel(): ReactNode {
     inspection?.entries.filter((entry) => selectedIds.includes(entry.id)) ?? [];
   const isSingleVideo = inspection?.kind === 'video';
 
+  /**
+   * Hands a finished download to the meta editor, if that is what the user asked
+   * for. Waiting on the job rather than on this panel is deliberate: the handoff
+   * still happens when the download outlives a visit to another module.
+   */
+  const openWhenFinished = (jobIds: readonly string[]): void => {
+    const [jobId] = jobIds;
+    if (!settings?.openInMetaEditorAfterDownload || jobIds.length !== 1 || !jobId) return;
+
+    void waitForJob(jobId).then((job) => {
+      if (job?.status === 'done' && job.outputPath) {
+        showModuleWithFile(META_EDITOR.id, job.outputPath);
+      }
+    });
+  };
+
   const start = (): void => {
     if (!settings || selectedEntries.length === 0) return;
 
@@ -108,7 +128,8 @@ export function DownloadPanel(): ReactNode {
           message: 'Progress is in the Jobs panel.',
         });
         setError(null);
-        openDrawer();
+        revealJobs();
+        openWhenFinished(result.value.jobIds);
       })
       .finally(() => setStarting(false));
   };
@@ -117,6 +138,22 @@ export function DownloadPanel(): ReactNode {
 
   return (
     <Stack gap="lg" maw={760}>
+      <PanelActions
+        status={describeSelection(inspection, selectedEntries.length, missingDestination)}
+      >
+        <Button
+          onClick={start}
+          loading={starting}
+          disabled={
+            selectedEntries.length === 0 ||
+            missingDestination ||
+            (isSingleVideo && !filename.trim())
+          }
+        >
+          Download
+        </Button>
+      </PanelActions>
+
       <Group align="flex-end" gap="sm" wrap="nowrap">
         <TextInput
           style={{ flex: 1 }}
@@ -164,23 +201,6 @@ export function DownloadPanel(): ReactNode {
       ) : null}
 
       <DownloadOptionsForm showFilenameTemplate={!isSingleVideo} />
-
-      <Group justify="space-between" align="center">
-        <Text size="sm" c="dimmed">
-          {describeSelection(inspection, selectedEntries.length, missingDestination)}
-        </Text>
-        <Button
-          onClick={start}
-          loading={starting}
-          disabled={
-            selectedEntries.length === 0 ||
-            missingDestination ||
-            (isSingleVideo && !filename.trim())
-          }
-        >
-          Download
-        </Button>
-      </Group>
     </Stack>
   );
 }

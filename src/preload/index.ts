@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { Job } from '@shared/jobs';
 import {
   RENDERER_API_KEY,
@@ -31,12 +31,25 @@ const api: MediaEditorApi = {
   updateSettings: (patch) => invoke('settings:update', patch),
   pickDirectory: (request) => invoke('dialog:pickDirectory', request),
   pickBinary: (request) => invoke('dialog:pickBinary', request),
+  pickMediaFile: () => invoke('dialog:pickMediaFile', undefined),
+  pickImage: () => invoke('dialog:pickImage', undefined),
+  pickSaveTarget: (sourcePath) => invoke('dialog:pickSaveTarget', { sourcePath }),
+  probeMedia: (path) => invoke('media:probe', { path }),
+  prepareCover: (imagePath) => invoke('media:prepareCover', { imagePath }),
+  coverFromClipboard: () => invoke('media:coverFromClipboard', undefined),
+  grabFrame: (request) => invoke('media:grabFrame', request),
+  saveTags: (request) => invoke('media:saveTags', request),
   inspectUrl: (url) => invoke('ytdlp:inspect', { url }),
   startDownloads: (request) => invoke('ytdlp:download', request),
   listJobs: () => invoke('jobs:list', undefined),
   cancelJob: (jobId) => invoke('jobs:cancel', { jobId }),
   clearFinishedJobs: () => invoke('jobs:clearFinished', undefined),
   showInFolder: (path) => invoke('shell:showInFolder', { path }),
+
+  // A dropped File carries no usable path in a sandboxed renderer; only this
+  // side can resolve one, and it is the path — never the contents — that crosses
+  // back over to main.
+  pathForFile: (file) => webUtils.getPathForFile(file),
 
   onJobsChanged: (listener) => {
     // The Electron event object stays on this side of the bridge.

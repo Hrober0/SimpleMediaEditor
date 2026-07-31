@@ -30,6 +30,17 @@ describe('normalizeSettings', () => {
     expect(result.restrictFilenames).toBe(false);
   });
 
+  it('coerces the open-in-editor flag to a boolean', () => {
+    expect(normalizeSettings({}).openInMetaEditorAfterDownload).toBe(false);
+    expect(
+      normalizeSettings({ openInMetaEditorAfterDownload: true }).openInMetaEditorAfterDownload,
+    ).toBe(true);
+    expect(
+      normalizeSettings({ openInMetaEditorAfterDownload: 'yes' as unknown as boolean })
+        .openInMetaEditorAfterDownload,
+    ).toBe(true);
+  });
+
   it('falls back when a choice is not one the app offers', () => {
     const hostile = {
       downloadTarget: 'exe',

@@ -1,27 +1,14 @@
 import type { ReactNode } from 'react';
-import {
-  Badge,
-  Button,
-  Drawer,
-  Group,
-  Paper,
-  Progress,
-  ScrollArea,
-  Stack,
-  Text,
-} from '@mantine/core';
-import { IconFolderOpen, IconX } from '@tabler/icons-react';
-import { isJobActive, isJobFinished, type Job, type JobStatus } from '@shared/jobs';
+import { Drawer, ScrollArea } from '@mantine/core';
 import { useJobs } from '../state/JobsContext';
-import { FailureAlert } from './FailureAlert';
+import { JobsList } from './JobsList';
 
 /**
- * The one progress surface in the app. Every module's long-running work shows up
- * here because it all goes through the same queue.
+ * The jobs list for windows too narrow to keep the side panel open. `revealJobs`
+ * decides which of the two the user gets, so nothing here has to know.
  */
 export function JobsDrawer(): ReactNode {
-  const { jobs, drawerOpened, closeDrawer, clearFinished } = useJobs();
-  const finishedCount = jobs.filter(isJobFinished).length;
+  const { drawerOpened, closeDrawer } = useJobs();
 
   return (
     <Drawer
@@ -32,103 +19,7 @@ export function JobsDrawer(): ReactNode {
       title="Jobs"
       scrollAreaComponent={ScrollArea.Autosize}
     >
-      <Stack gap="md">
-        <Group justify="space-between">
-          <Text size="sm" c="dimmed">
-            {jobs.length === 0
-              ? 'Nothing queued yet.'
-              : `${String(jobs.length)} total, ${String(jobs.filter(isJobActive).length)} active`}
-          </Text>
-          <Button
-            variant="subtle"
-            size="compact-sm"
-            disabled={finishedCount === 0}
-            onClick={clearFinished}
-          >
-            Clear finished
-          </Button>
-        </Group>
-
-        {jobs.map((job) => (
-          <JobCard key={job.id} job={job} />
-        ))}
-      </Stack>
+      <JobsList />
     </Drawer>
-  );
-}
-
-const STATUS_COLORS: Record<JobStatus, string> = {
-  queued: 'gray',
-  running: 'blue',
-  done: 'teal',
-  failed: 'red',
-  cancelled: 'gray',
-};
-
-function JobCard({ job }: { job: Job }): ReactNode {
-  const { cancel, showInFolder } = useJobs();
-  const active = isJobActive(job);
-
-  return (
-    <Paper withBorder radius="md" p="sm">
-      <Stack gap="xs">
-        <Group justify="space-between" wrap="nowrap" align="flex-start" gap="sm">
-          <Text size="sm" fw={500} lineClamp={2} style={{ flex: 1, minWidth: 0 }}>
-            {job.label}
-          </Text>
-          {/*
-            Without flexShrink the badge is compressed by a long job title until
-            its own label wraps mid-word.
-          */}
-          <Badge color={STATUS_COLORS[job.status]} variant="light" style={{ flexShrink: 0 }}>
-            {job.status}
-          </Badge>
-        </Group>
-
-        {active ? (
-          <Progress
-            // A null progress means the stage cannot be measured (post-processing);
-            // a moving full bar says "working" without claiming to be finished.
-            value={job.progress === null ? 100 : job.progress * 100}
-            animated={job.progress === null || job.status === 'running'}
-            size="sm"
-          />
-        ) : null}
-
-        <Text size="xs" c="dimmed">
-          {job.detail}
-        </Text>
-
-        {job.status === 'failed' ? (
-          <FailureAlert
-            title="Failed"
-            error={{ message: job.error ?? 'Unknown error', details: job.log.join('\n') || null }}
-          />
-        ) : null}
-
-        <Group gap="xs">
-          {active ? (
-            <Button
-              variant="default"
-              size="compact-sm"
-              leftSection={<IconX size={14} />}
-              onClick={() => cancel(job.id)}
-            >
-              Cancel
-            </Button>
-          ) : null}
-          {job.status === 'done' && job.outputPath ? (
-            <Button
-              variant="default"
-              size="compact-sm"
-              leftSection={<IconFolderOpen size={14} />}
-              onClick={() => showInFolder(job.outputPath ?? '')}
-            >
-              Show in folder
-            </Button>
-          ) : null}
-        </Group>
-      </Stack>
-    </Paper>
   );
 }
