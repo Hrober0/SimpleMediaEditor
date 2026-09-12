@@ -140,7 +140,7 @@ export function DownloadPanel(): ReactNode {
   const missingDestination = !settings?.downloadDirectory;
 
   return (
-    <Stack gap="lg" maw={760}>
+    <Stack gap="lg">
       <PanelActions
         status={describeSelection(inspection, selectedEntries.length, missingDestination)}
       >

@@ -13,7 +13,7 @@ export function SettingsPanel(): ReactNode {
   if (!settings) return <Skeleton height={320} radius="md" />;
 
   return (
-    <Stack gap="xl" maw={760}>
+    <Stack gap="xl">
       <Section
         title="External tools"
         description="Resolved once at startup and whenever you change a path here."

@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import {
+  ActionIcon,
   AppShell,
-  Button,
+  Box,
   Center,
   Group,
   Indicator,
@@ -11,17 +12,13 @@ import {
   Stack,
   Text,
   Title,
+  Tooltip,
 } from '@mantine/core';
 import { IconListDetails } from '@tabler/icons-react';
 import { DependencyGate } from './components/DependencyGate';
 import { JobsDrawer } from './components/JobsDrawer';
 import { JobsList } from './components/JobsList';
-import {
-  JOBS_PANEL_BREAKPOINT,
-  JOBS_PANEL_WIDTH,
-  SHELL_HEADER_HEIGHT,
-  SHELL_NAVBAR_WIDTH,
-} from './layout';
+import { JOBS_PANEL_BREAKPOINT, JOBS_PANEL_WIDTH, SHELL_NAVBAR_WIDTH } from './layout';
 import { MODULE_REGISTRY } from './modules/registry';
 import { MODULE_SECTIONS, type UtilityModule } from './modules/types';
 import { useEnvironment } from './state/EnvironmentContext';
@@ -34,7 +31,7 @@ import { useNavigation } from './state/NavigationContext';
  */
 export function App(): ReactNode {
   const { environment, missingBinaries } = useEnvironment();
-  const { activeCount, revealJobs } = useJobs();
+  const { activeCount, asideOpened, drawerOpened, toggleJobs } = useJobs();
   const { activeModuleId, showModule } = useNavigation();
 
   if (!environment) {
@@ -50,43 +47,21 @@ export function App(): ReactNode {
   }
 
   const active = MODULE_REGISTRY.find((module) => module.id === activeModuleId);
+  const jobsPanelOpen = asideOpened || drawerOpened;
 
   return (
     <AppShell
-      header={{ height: SHELL_HEADER_HEIGHT }}
       navbar={{ width: SHELL_NAVBAR_WIDTH, breakpoint: 'xs' }}
-      // The jobs list stays on screen whenever the window is wide enough for it;
-      // below the breakpoint it collapses and the drawer takes over.
+      // The jobs list stays on screen whenever the window is wide enough for
+      // it and the user has not closed it; below the breakpoint it collapses
+      // and the drawer takes over regardless.
       aside={{
         width: JOBS_PANEL_WIDTH,
         breakpoint: JOBS_PANEL_BREAKPOINT,
-        collapsed: { mobile: true, desktop: false },
+        collapsed: { mobile: true, desktop: !asideOpened },
       }}
       padding="lg"
     >
-      <AppShell.Header>
-        <Group h="100%" px="md" justify="space-between">
-          <Text fw={600}>MediaEditor</Text>
-          {/* Hidden where the side panel already shows the list. */}
-          <Indicator
-            label={activeCount}
-            size={18}
-            disabled={activeCount === 0}
-            offset={4}
-            color="blue"
-            hiddenFrom={JOBS_PANEL_BREAKPOINT}
-          >
-            <Button
-              variant="default"
-              leftSection={<IconListDetails size={16} />}
-              onClick={revealJobs}
-            >
-              Jobs
-            </Button>
-          </Indicator>
-        </Group>
-      </AppShell.Header>
-
       <AppShell.Navbar p="sm">
         <Stack gap="lg">
           {MODULE_SECTIONS.map((section) => {
@@ -114,8 +89,34 @@ export function App(): ReactNode {
         </Stack>
       </AppShell.Navbar>
 
-      <AppShell.Main>
-        {active ? <ModulePanel module={active} /> : <Text c="dimmed">No module selected.</Text>}
+      <AppShell.Main style={{ height: '100dvh', overflow: 'hidden', position: 'relative' }}>
+        {/* Main gets its own bounded scroll region, the same way the Jobs
+            list does in the aside below — otherwise this content overflows
+            into the page itself, and the native scrollbar for that ends up
+            at the outer edge of the window, past the aside entirely, which
+            reads as though it belongs to Jobs rather than to this panel. */}
+        <ScrollArea h="100%" type="auto">
+          {active ? <ModulePanel module={active} /> : <Text c="dimmed">No module selected.</Text>}
+        </ScrollArea>
+
+        {/* Floating rather than in a header bar: there is no header any more,
+            and this way the toggle is reachable — and stays put while the
+            panel underneath it scrolls — whether the window is wide enough
+            for the side panel or narrow enough for the drawer. */}
+        <Box pos="absolute" top={16} right={16} style={{ zIndex: 100 }}>
+          <Tooltip label={jobsPanelOpen ? 'Hide jobs' : 'Show jobs'}>
+            <Indicator label={activeCount} size={18} disabled={activeCount === 0} offset={4}>
+              <ActionIcon
+                size="lg"
+                variant={jobsPanelOpen ? 'filled' : 'default'}
+                onClick={toggleJobs}
+                aria-label={jobsPanelOpen ? 'Hide jobs' : 'Show jobs'}
+              >
+                <IconListDetails size={20} />
+              </ActionIcon>
+            </Indicator>
+          </Tooltip>
+        </Box>
       </AppShell.Main>
 
       <AppShell.Aside p="sm">

@@ -78,7 +78,10 @@ export function JobsProvider({ children }: { children: ReactNode }): ReactNode {
     });
   }, []);
 
-  const [drawerOpened, { open: openDrawer, close: closeDrawer }] = useDisclosure(false);
+  const [drawerOpened, drawerHandlers] = useDisclosure(false);
+  // Open by default: the side panel is the normal state on a wide window,
+  // same as before this could be closed at all.
+  const [asideOpened, asideHandlers] = useDisclosure(true);
 
   // Evaluated immediately rather than after an effect, so queueing something in
   // the first moments after startup still opens the right surface.
@@ -87,10 +90,14 @@ export function JobsProvider({ children }: { children: ReactNode }): ReactNode {
   });
 
   const revealJobs = useCallback(() => {
-    // The side panel is already showing the list; a drawer on top of it would
-    // cover the panel the user was working in for no reason.
-    if (!panelVisible) openDrawer();
-  }, [panelVisible, openDrawer]);
+    if (panelVisible) asideHandlers.open();
+    else drawerHandlers.open();
+  }, [panelVisible, asideHandlers, drawerHandlers]);
+
+  const toggleJobs = useCallback(() => {
+    if (panelVisible) asideHandlers.toggle();
+    else drawerHandlers.toggle();
+  }, [panelVisible, asideHandlers, drawerHandlers]);
 
   const value = useMemo<JobsContextValue>(
     () => ({
@@ -101,10 +108,23 @@ export function JobsProvider({ children }: { children: ReactNode }): ReactNode {
       showInFolder,
       waitForJob,
       revealJobs,
+      toggleJobs,
+      asideOpened,
       drawerOpened,
-      closeDrawer,
+      closeDrawer: drawerHandlers.close,
     }),
-    [jobs, cancel, clearFinished, showInFolder, waitForJob, revealJobs, drawerOpened, closeDrawer],
+    [
+      jobs,
+      cancel,
+      clearFinished,
+      showInFolder,
+      waitForJob,
+      revealJobs,
+      toggleJobs,
+      asideOpened,
+      drawerOpened,
+      drawerHandlers.close,
+    ],
   );
 
   return <JobsContext.Provider value={value}>{children}</JobsContext.Provider>;

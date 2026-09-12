@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import { Box, Group, Text } from '@mantine/core';
-import { SHELL_HEADER_HEIGHT } from '../layout';
 
 interface PanelActionsProps {
   /** What the action will do, or why it is unavailable. */
@@ -16,14 +15,17 @@ interface PanelActionsProps {
  * the user has scrolled — a Save or Download button that scrolls off the bottom of
  * a long form is a button you have to go looking for.
  *
- * It sticks below the fixed header rather than at the viewport top, and paints an
- * opaque background so the form passes behind it.
+ * It sticks to the top of its own scroll area — the `ScrollArea` `App` wraps
+ * the active panel in — rather than the viewport top: the fixed shell header
+ * sits entirely above that scroll area, so nothing else needs to be
+ * compensated for here. It still paints an opaque background so the form
+ * passes behind it while scrolling.
  */
 export function PanelActions({ status, children }: PanelActionsProps): ReactNode {
   return (
     <Box
       pos="sticky"
-      top={SHELL_HEADER_HEIGHT}
+      top={0}
       py="sm"
       style={{
         zIndex: 2,

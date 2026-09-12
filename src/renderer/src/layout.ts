@@ -1,13 +1,7 @@
 /**
  * Shell measurements shared between the shell itself and anything that has to
  * position against it.
- *
- * The header is fixed, so a sticky element inside a panel has to be offset by its
- * height or it slides underneath. Keeping the number here means the two cannot
- * drift apart.
  */
-export const SHELL_HEADER_HEIGHT = 56;
-
 export const SHELL_NAVBAR_WIDTH = 264;
 
 /** The jobs side panel, shown instead of the drawer when the window allows it. */
