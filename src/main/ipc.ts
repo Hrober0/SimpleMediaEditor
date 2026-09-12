@@ -212,7 +212,10 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 
   handle('ytdlp:inspect', async (request) => {
     try {
-      const inspection = await inspectUrl(request.url, { ytdlpPath: binaries.require('ytdlp') });
+      const inspection = await inspectUrl(request.url, {
+        ytdlpPath: binaries.require('ytdlp'),
+        jsRuntime: binaries.jsRuntime(),
+      });
       return ok(inspection);
     } catch (error) {
       return failure(error);
@@ -229,6 +232,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       const jobDeps = {
         ytdlpPath: binaries.require('ytdlp'),
         ffmpegDirectory: binaries.ffmpegDirectory(),
+        jsRuntime: binaries.jsRuntime(),
         tempRoot: app.getPath('temp'),
       };
 

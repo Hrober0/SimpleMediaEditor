@@ -1,5 +1,6 @@
 import { mkdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { JsRuntime } from '@shared/binaries';
 import type { DownloadItem, DownloadOptions } from '@shared/download';
 import { AppFailure, errorMessage } from '../errors';
 import type { JobContext, JobSpec } from '../jobs/queue';
@@ -8,6 +9,7 @@ import { buildDownloadArgs } from './args';
 import {
   isPostProcessingStage,
   parseOutputPath,
+  parsePrintedOutputPath,
   parseProgressLine,
   parseStageLine,
 } from './output-parser';
@@ -16,6 +18,8 @@ export interface DownloadJobDeps {
   ytdlpPath: string;
   /** Handed to yt-dlp so it post-processes with the ffmpeg the app resolved. */
   ffmpegDirectory: string | null;
+  /** Solves YouTube's JavaScript challenges; without it downloads get a 403. */
+  jsRuntime: JsRuntime | null;
   /** Parent for per-job temp directories, typically app.getPath('temp'). */
   tempRoot: string;
 }
@@ -48,13 +52,17 @@ async function runDownload(
   await mkdir(options.destination, { recursive: true });
   await mkdir(tempDirectory, { recursive: true });
 
-  let reportedPath: string | null = null;
+  // What yt-dlp printed for our own template, and what could be read out of its
+  // log if it printed nothing — which happens for an already-downloaded file.
+  let printedPath: string | null = null;
+  let loggedPath: string | null = null;
 
   try {
     const args = buildDownloadArgs(item, options, {
       destination: options.destination,
       tempDirectory,
       ffmpegDirectory: deps.ffmpegDirectory,
+      jsRuntime: deps.jsRuntime,
     });
 
     // The exact invocation, so a failure report is reproducible from the log pane.
@@ -74,10 +82,17 @@ async function runDownload(
           return;
         }
 
+        const printed = parsePrintedOutputPath(line);
+        if (printed) {
+          // Our own machinery, like the progress lines: of no use in the log tail.
+          printedPath = printed;
+          return;
+        }
+
         context.log(line);
 
         const path = parseOutputPath(line);
-        if (path) reportedPath = path;
+        if (path) loggedPath = path;
 
         const stage = parseStageLine(line);
         if (stage) {
@@ -98,7 +113,11 @@ async function runDownload(
       );
     }
 
-    context.setOutputPath((await existingFile(reportedPath)) ?? options.destination);
+    // Left unset when the file cannot be named, rather than standing in the
+    // destination folder: this path is what the meta editor is handed, and a
+    // folder there fails to open as a media file.
+    const produced = await existingFile(printedPath ?? loggedPath);
+    if (produced) context.setOutputPath(produced);
   } finally {
     await removeQuietly(tempDirectory);
   }

@@ -1,7 +1,12 @@
 import type { ReactNode } from 'react';
 import { Badge, Button, Code, Group, Stack, Text, ThemeIcon, Tooltip } from '@mantine/core';
-import { IconCheck, IconRefresh, IconSearch, IconX } from '@tabler/icons-react';
-import { isBinaryAvailable, type BinaryId, type BinaryStatus } from '@shared/binaries';
+import { IconCheck, IconMinus, IconRefresh, IconSearch, IconX } from '@tabler/icons-react';
+import {
+  isBinaryAvailable,
+  isBinaryRequired,
+  type BinaryId,
+  type BinaryStatus,
+} from '@shared/binaries';
 import { api } from '../api';
 import { useEnvironment } from '../state/EnvironmentContext';
 import { useSettings } from '../state/SettingsContext';
@@ -68,13 +73,17 @@ interface BinaryRowProps {
 
 function BinaryRow({ binary, hasOverride, onLocate, onClearOverride }: BinaryRowProps): ReactNode {
   const available = isBinaryAvailable(binary);
+  // A missing optional tool is a state, not a fault: only one of the JavaScript
+  // runtimes is needed, so flagging both in red would say something untrue.
+  const required = isBinaryRequired(binary);
+  const mark = describeAvailability(available, required);
 
   return (
     <Stack gap={6}>
       <Group justify="space-between" wrap="nowrap" align="center">
         <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
-          <ThemeIcon variant="light" color={available ? 'teal' : 'red'} radius="xl">
-            {available ? <IconCheck size={16} /> : <IconX size={16} />}
+          <ThemeIcon variant="light" color={mark.color} radius="xl">
+            {mark.icon}
           </ThemeIcon>
 
           <Stack gap={0} style={{ minWidth: 0 }}>
@@ -123,7 +132,7 @@ function BinaryRow({ binary, hasOverride, onLocate, onClearOverride }: BinaryRow
         </Group>
       </Group>
 
-      {!available && binary.error ? (
+      {required && !available && binary.error ? (
         <FailureAlert
           title={`${binary.displayName} was not found`}
           error={{
@@ -134,4 +143,14 @@ function BinaryRow({ binary, hasOverride, onLocate, onClearOverride }: BinaryRow
       ) : null}
     </Stack>
   );
+}
+
+function describeAvailability(
+  available: boolean,
+  required: boolean,
+): { color: string; icon: ReactNode } {
+  if (available) return { color: 'teal', icon: <IconCheck size={16} /> };
+  return required
+    ? { color: 'red', icon: <IconX size={16} /> }
+    : { color: 'gray', icon: <IconMinus size={16} /> };
 }

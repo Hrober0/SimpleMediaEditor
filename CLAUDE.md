@@ -94,8 +94,13 @@ progress mechanism for a new feature.
 
 `src/main/binaries.ts` only. Never hardcode a path and never assume a binary is on
 `PATH` without checking. Resolution order is user setting → `PATH` → bundled
-fallback. On this machine: ffmpeg 7.1 and yt-dlp 2026.06.09 are installed and on
-`PATH`.
+fallback. On this machine: ffmpeg 7.1, yt-dlp 2026.06.09 and Node 22.10 are
+installed and on `PATH`.
+
+yt-dlp also needs a JavaScript runtime, Deno or Node, or YouTube answers every
+download with `HTTP Error 403: Forbidden`. Only one is needed, so both are
+optional descriptors: they must never gate startup, and the download panel warns
+when neither was found.
 
 ### Surface ffmpeg and yt-dlp errors verbatim
 

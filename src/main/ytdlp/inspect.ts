@@ -1,3 +1,4 @@
+import type { JsRuntime } from '@shared/binaries';
 import type { MediaSourceEntry, UrlInspection } from '@shared/download';
 import { AppFailure } from '../errors';
 import { runProcess } from '../jobs/runner';
@@ -13,6 +14,8 @@ const INSPECT_TIMEOUT_MS = 60_000;
 
 export interface InspectDeps {
   ytdlpPath: string;
+  /** Extraction reads the player script, which needs a runtime to run it. */
+  jsRuntime: JsRuntime | null;
   signal?: AbortSignal;
 }
 
@@ -21,7 +24,7 @@ export async function inspectUrl(rawUrl: string, deps: InspectDeps): Promise<Url
 
   const result = await runProcess({
     binary: deps.ytdlpPath,
-    args: buildInspectArgs(url),
+    args: buildInspectArgs(url, deps.jsRuntime),
     captureStdout: true,
     timeoutMs: INSPECT_TIMEOUT_MS,
     signal: deps.signal,

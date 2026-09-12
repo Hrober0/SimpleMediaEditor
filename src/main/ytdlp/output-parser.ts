@@ -1,5 +1,5 @@
 import { formatBytes, formatDuration } from '@shared/format';
-import { PROGRESS_PREFIX } from './args';
+import { OUTPUT_PATH_PREFIX, PROGRESS_PREFIX } from './args';
 
 /**
  * Turns yt-dlp's output lines into job updates.
@@ -70,6 +70,15 @@ export function isPostProcessingStage(stage: string): boolean {
   return stage !== 'Downloading' && stage !== 'Reading video info';
 }
 
+/**
+ * The finished file, as yt-dlp printed it for our --print template. This is the
+ * answer where there is one; the log patterns below are only a fallback.
+ */
+export function parsePrintedOutputPath(line: string): string | null {
+  if (!line.startsWith(OUTPUT_PATH_PREFIX)) return null;
+  return line.slice(OUTPUT_PATH_PREFIX.length).trim() || null;
+}
+
 const OUTPUT_PATH_PATTERNS: readonly RegExp[] = [
   /^\[download\] Destination: (.+)$/,
   /^\[ExtractAudio\] Destination: (.+)$/,
@@ -83,8 +92,10 @@ const OUTPUT_PATH_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
- * The path yt-dlp last reported writing. Callers keep the most recent match:
- * later stages rename the file, and only the final name is useful.
+ * The path yt-dlp last reported writing, read out of its human-facing output.
+ * Callers keep the most recent match: later stages rename the file, and only the
+ * final name is useful. Used only when nothing was printed for our own template,
+ * which is the case for a file that was already downloaded.
  */
 export function parseOutputPath(line: string): string | null {
   for (const pattern of OUTPUT_PATH_PATTERNS) {

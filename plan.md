@@ -74,7 +74,14 @@ Two practical notes:
 ### External binaries
 
 `ffmpeg`, `ffprobe`, and `yt-dlp` are **not** bundled initially — they are resolved
-at runtime. Verified present on this machine: ffmpeg 7.1, yt-dlp 2026.06.09.
+at runtime. Verified present on this machine: ffmpeg 7.1, yt-dlp 2026.06.09,
+Node 22.10.
+
+A JavaScript runtime, **Deno or Node**, is resolved the same way. yt-dlp needs one
+to solve the challenge YouTube signs its media URLs with; without it every
+download fails with `HTTP Error 403: Forbidden`. Only one of the two is needed, so
+both are optional: a missing runtime is a warning in the download panel, not a
+startup gate.
 
 Resolution order, implemented once in `main/binaries.ts`:
 
@@ -82,8 +89,8 @@ Resolution order, implemented once in `main/binaries.ts`:
 2. `PATH` lookup
 3. Bundled fallback (added at packaging time, later phase)
 
-On startup the app probes all three and shows a blocking setup screen naming the
-missing one. `yt-dlp` in particular must stay user-updatable — YouTube changes break
+On startup the app probes them all and shows a blocking setup screen naming the
+missing **required** one. `yt-dlp` in particular must stay user-updatable — YouTube changes break
 pinned versions regularly, so bundling a frozen copy is a support burden.
 
 ---
@@ -286,9 +293,45 @@ and no stray `yt-dlp`/`ffmpeg` behind.
 
 Still unverified: the GUI itself, and Linux behaviour.
 
-Known environment note: this machine's yt-dlp warns `No supported JavaScript
-runtime could be found … some formats may be missing`. Installing Deno silences it
-and restores full format availability. The warning reaches the job log verbatim.
+### Two failures found once downloads were run for real
+
+The `No supported JavaScript runtime could be found` warning was noted here as
+cosmetic. It was not: it was the whole story behind downloads failing.
+
+**`HTTP Error 403: Forbidden` on every download.** YouTube now withholds usable
+formats from the clients yt-dlp reaches for on its own. Most require a GVS PO
+token, and `android_vr`, which does not, is handed URLs that answer 403. Two
+things are needed together, and neither works alone:
+
+- A JavaScript runtime, which signs the format URLs. yt-dlp looks for Deno by
+  itself but never for Node, so whichever the app resolved is named with
+  `--js-runtimes`. Deno and Node are both optional binaries: only one is needed,
+  so a missing runtime warns in the download panel rather than gating startup.
+- `--extractor-args youtube:player_client=web_embedded,default`. `web_embedded`
+  needs no PO token and still offers the full ladder up to 1080p, so it goes
+  first, with yt-dlp's defaults kept behind it for videos that cannot be
+  embedded. Verified against four videos. This stays only until yt-dlp's own
+  defaults work again.
+
+**"That file could not be used" when a finished download opened in the meta
+editor.** yt-dlp writes its output in the console codepage, cp1250 on this
+machine, while the spawn wrapper decodes UTF-8. A name like `Żółć.mp3` therefore
+arrived as bytes that are not valid UTF-8, the path no longer matched anything on
+disk, and the job fell back to reporting the destination _folder_ as its output
+path. The meta editor then probed a directory. Fixed three ways:
+
+- `--encoding utf-8`, so what yt-dlp writes is what the wrapper expects.
+- `--print after_move:%(filepath)s`, so the finished file is named by yt-dlp
+  rather than scraped from log lines. `--print` implies `--quiet`, which silently
+  took the progress lines and the verbatim log with it, so `--no-quiet` follows
+  it. The log-scraping patterns stay as a fallback for an already-downloaded file.
+- A job's `outputPath` is now the produced file or nothing. It is never a folder,
+  which is what turned an unknown filename into a confusing failure one step
+  later. The cost is that "Show in folder" does not appear when the filename
+  could not be determined, which the two fixes above should make unreachable.
+
+Covered by an integration test that downloads to a non-ASCII filename and asserts
+the reported path is the file on disk.
 
 ---
 

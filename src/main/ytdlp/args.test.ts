@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import type { JsRuntime } from '@shared/binaries';
 import type { DownloadItem, DownloadOptions } from '@shared/download';
 import {
+  OUTPUT_PATH_TEMPLATE,
   PROGRESS_TEMPLATE,
   buildDownloadArgs,
   buildInspectArgs,
@@ -9,6 +11,9 @@ import {
 } from './args';
 
 const item: DownloadItem = { url: 'https://youtu.be/abc', title: 'A song', filename: null };
+
+const onPath: JsRuntime = { name: 'deno', path: null };
+const located: JsRuntime = { name: 'node', path: '/opt/node/bin/node' };
 
 const mp3: DownloadOptions = {
   target: 'mp3',
@@ -19,7 +24,12 @@ const mp3: DownloadOptions = {
   restrictFilenames: true,
 };
 
-const context = { destination: '/music', tempDirectory: '/tmp/job', ffmpegDirectory: '/bin' };
+const context = {
+  destination: '/music',
+  tempDirectory: '/tmp/job',
+  ffmpegDirectory: '/bin',
+  jsRuntime: onPath,
+};
 
 /** Reads the value that follows a flag, so tests do not depend on argument order. */
 function valueOf(args: readonly string[], flag: string): string | undefined {
@@ -29,19 +39,23 @@ function valueOf(args: readonly string[], flag: string): string | undefined {
 
 describe('buildInspectArgs', () => {
   it('asks for one JSON document without expanding playlist entries', () => {
-    const args = buildInspectArgs('https://youtu.be/abc');
+    const args = buildInspectArgs('https://youtu.be/abc', onPath);
     expect(args).toContain('--dump-single-json');
     expect(args).toContain('--flat-playlist');
   });
 
   it('puts the URL after -- so it can never be read as a flag', () => {
-    const args = buildInspectArgs('--version');
+    const args = buildInspectArgs('--version', onPath);
     expect(args.at(-2)).toBe('--');
     expect(args.at(-1)).toBe('--version');
   });
 
   it('ignores the user global yt-dlp config', () => {
-    expect(buildInspectArgs('https://youtu.be/abc')).toContain('--ignore-config');
+    expect(buildInspectArgs('https://youtu.be/abc', onPath)).toContain('--ignore-config');
+  });
+
+  it('names the JavaScript runtime, since extraction runs the player script', () => {
+    expect(valueOf(buildInspectArgs('https://youtu.be/abc', onPath), '--js-runtimes')).toBe('deno');
   });
 });
 
@@ -54,6 +68,38 @@ describe('buildDownloadArgs', () => {
 
   it('never expands a playlist, since each entry is its own job', () => {
     expect(buildDownloadArgs(item, mp3, context)).toContain('--no-playlist');
+  });
+
+  it('asks yt-dlp to name the finished file after it has been moved into place', () => {
+    const args = buildDownloadArgs(item, mp3, context);
+    expect(valueOf(args, '--print')).toBe(OUTPUT_PATH_TEMPLATE);
+    expect(OUTPUT_PATH_TEMPLATE.startsWith('after_move:')).toBe(true);
+    // --print implies --quiet, which would silence progress and the tool output
+    // the error pane shows. The undo has to follow the flag that implied it.
+    expect(args.indexOf('--no-quiet')).toBeGreaterThan(args.indexOf('--print'));
+  });
+
+  it('forces UTF-8 output, so a non-ASCII path survives being read back', () => {
+    // In the console codepage, "Żółć.mp3" arrives as bytes that are not valid
+    // UTF-8, and the file the app just downloaded can no longer be found.
+    expect(valueOf(buildDownloadArgs(item, mp3, context), '--encoding')).toBe('utf-8');
+  });
+
+  it('tries a player client that needs no PO token before yt-dlp own defaults', () => {
+    const clients = valueOf(buildDownloadArgs(item, mp3, context), '--extractor-args');
+    expect(clients).toBe('youtube:player_client=web_embedded,default');
+  });
+
+  it('names a runtime found on PATH without a path, and a located one with it', () => {
+    expect(valueOf(buildDownloadArgs(item, mp3, context), '--js-runtimes')).toBe('deno');
+
+    const withPath = buildDownloadArgs(item, mp3, { ...context, jsRuntime: located });
+    expect(valueOf(withPath, '--js-runtimes')).toBe('node:/opt/node/bin/node');
+  });
+
+  it('omits the runtime flag when none was found, rather than naming nothing', () => {
+    const withoutRuntime = buildDownloadArgs(item, mp3, { ...context, jsRuntime: null });
+    expect(withoutRuntime).not.toContain('--js-runtimes');
   });
 
   it('keeps partial files in the job temp directory and finished files in the destination', () => {

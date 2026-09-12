@@ -2,6 +2,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { JS_RUNTIME_IDS, type JsRuntime } from '@shared/binaries';
 import type { Job } from '@shared/jobs';
 import { AppFailure } from '../errors';
 import { JobQueue } from '../jobs/queue';
@@ -25,13 +26,35 @@ const LARGE_VIDEO = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 let destination: string;
 let tempRoot: string;
 
-const deps = { ytdlpPath: 'yt-dlp', ffmpegDirectory: null, tempRoot: '' };
+const deps: {
+  ytdlpPath: string;
+  ffmpegDirectory: null;
+  jsRuntime: JsRuntime | null;
+  tempRoot: string;
+} = { ytdlpPath: 'yt-dlp', ffmpegDirectory: null, jsRuntime: null, tempRoot: '' };
 
 beforeAll(async () => {
   destination = await mkdtemp(join(tmpdir(), 'mediaeditor-test-out-'));
   tempRoot = await mkdtemp(join(tmpdir(), 'mediaeditor-test-tmp-'));
   deps.tempRoot = tempRoot;
+  // The real thing needs a real runtime: without one YouTube answers 403, which
+  // would look like a broken flag rather than a missing dependency.
+  deps.jsRuntime = await findJsRuntime();
+  expect(deps.jsRuntime, 'install Deno or Node to run the integration tests').not.toBeNull();
 });
+
+/** Mirrors the resolver: first runtime on PATH that reports a version, Deno first. */
+async function findJsRuntime(): Promise<JsRuntime | null> {
+  for (const name of JS_RUNTIME_IDS) {
+    const result = await runProcess({
+      binary: process.platform === 'win32' ? `${name}.exe` : name,
+      args: ['--version'],
+      timeoutMs: 8000,
+    }).catch(() => null);
+    if (result?.code === 0) return { name, path: null };
+  }
+  return null;
+}
 
 afterAll(async () => {
   await rm(destination, { recursive: true, force: true });
@@ -56,7 +79,10 @@ function watch(queue: JobQueue, jobId: string): Promise<{ job: Job; details: str
 
 describe('inspectUrl', () => {
   it('reads a real video', async () => {
-    const inspection = await inspectUrl(SHORT_VIDEO, { ytdlpPath: 'yt-dlp' });
+    const inspection = await inspectUrl(SHORT_VIDEO, {
+      ytdlpPath: 'yt-dlp',
+      jsRuntime: deps.jsRuntime,
+    });
 
     expect(inspection.kind).toBe('video');
     expect(inspection.entries[0]?.title).toBe('Me at the zoo');
@@ -69,6 +95,7 @@ describe('inspectUrl', () => {
     // answer the user needs, so it must reach us rather than being flattened.
     const failure: unknown = await inspectUrl('https://www.youtube.com/watch?v=BaW_jenozKc', {
       ytdlpPath: 'yt-dlp',
+      jsRuntime: deps.jsRuntime,
     }).then(
       () => null,
       (error: unknown) => error,
@@ -121,6 +148,35 @@ describe('download job', () => {
 
     // The job's temp directory is gone, and nothing partial is left behind.
     expect(await readdir(join(tempRoot, 'mediaeditor')).catch(() => [])).toEqual([]);
+  });
+
+  it('reports a non-ASCII name as it is on disk, so the file can be opened again', async () => {
+    // yt-dlp writes its output in the console codepage unless told otherwise, and
+    // a path that arrives as undecodable bytes leaves the app unable to find the
+    // file it just downloaded. This is what the meta editor handoff needs.
+    const name = 'Żółć Ąę test';
+    const queue = new JobQueue(() => 1);
+    const job = queue.enqueue(
+      createDownloadJob(
+        { url: SHORT_VIDEO, title: name, filename: name },
+        {
+          target: 'mp3',
+          audioQuality: '5',
+          videoQuality: 'best',
+          destination,
+          filenameTemplate: '%(title)s.%(ext)s',
+          // --restrict-filenames would flatten the name to ASCII and prove nothing.
+          restrictFilenames: false,
+        },
+        deps,
+      ),
+    );
+
+    const { job: finished } = await watch(queue, job.id);
+
+    expect(finished.status).toBe('done');
+    expect(finished.outputPath).toBe(join(destination, `${name}.mp3`));
+    expect(await readdir(destination)).toContain(`${name}.mp3`);
   });
 
   it('cancels mid-download, killing the tool and leaving nothing behind', async () => {

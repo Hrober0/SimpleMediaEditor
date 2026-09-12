@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { isBinaryAvailable, type BinaryStatus } from '@shared/binaries';
+import {
+  isBinaryAvailable,
+  isBinaryRequired,
+  JS_RUNTIME_IDS,
+  type BinaryStatus,
+} from '@shared/binaries';
 import type { AppEnvironment } from '@shared/ipc-contract';
 import { api } from '../api';
 import { EnvironmentContext, type EnvironmentContextValue } from './EnvironmentContext';
@@ -31,7 +36,13 @@ export function EnvironmentProvider({ children }: { children: ReactNode }): Reac
     return {
       environment,
       binaries,
-      missingBinaries: binaries.filter((binary) => !isBinaryAvailable(binary)),
+      missingBinaries: binaries.filter(
+        (binary) => isBinaryRequired(binary) && !isBinaryAvailable(binary),
+      ),
+      hasJsRuntime: binaries.some(
+        (binary) =>
+          isBinaryAvailable(binary) && JS_RUNTIME_IDS.some((runtime) => runtime === binary.id),
+      ),
       recheck,
       rechecking,
     };

@@ -1,12 +1,14 @@
 import { useCallback, useRef, useState, type ClipboardEvent, type ReactNode } from 'react';
-import { Button, Divider, Group, Stack, TextInput } from '@mantine/core';
+import { Alert, Button, Divider, Group, Stack, Text, TextInput } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
+import { IconAlertTriangle } from '@tabler/icons-react';
 import { downloadTargetById, type UrlInspection } from '@shared/download';
 import { sanitizeFilename, stripKnownExtension } from '@shared/filenames';
 import type { ErrorInfo } from '@shared/result';
 import { api } from '../../api';
 import { FailureAlert } from '../../components/FailureAlert';
 import { PanelActions } from '../../components/PanelActions';
+import { useEnvironment } from '../../state/EnvironmentContext';
 import { useJobs } from '../../state/JobsContext';
 import { useNavigation } from '../../state/NavigationContext';
 import { useSettings } from '../../state/SettingsContext';
@@ -22,6 +24,7 @@ export function DownloadPanel(): ReactNode {
   const { settings } = useSettings();
   const { revealJobs, waitForJob } = useJobs();
   const { showModuleWithFile } = useNavigation();
+  const { hasJsRuntime } = useEnvironment();
 
   const [url, setUrl] = useState('');
   const [inspection, setInspection] = useState<UrlInspection | null>(null);
@@ -154,6 +157,8 @@ export function DownloadPanel(): ReactNode {
         </Button>
       </PanelActions>
 
+      {hasJsRuntime ? null : <MissingJsRuntimeAlert />}
+
       <Group align="flex-end" gap="sm" wrap="nowrap">
         <TextInput
           style={{ flex: 1 }}
@@ -202,6 +207,28 @@ export function DownloadPanel(): ReactNode {
 
       <DownloadOptionsForm showFilenameTemplate={!isSingleVideo} />
     </Stack>
+  );
+}
+
+/**
+ * Said before a download is queued rather than after it fails: the failure it
+ * prevents is a bare "HTTP Error 403: Forbidden" that gives no hint of a missing
+ * runtime.
+ */
+function MissingJsRuntimeAlert(): ReactNode {
+  return (
+    <Alert
+      variant="light"
+      color="yellow"
+      icon={<IconAlertTriangle size={18} />}
+      title="No JavaScript runtime was found"
+    >
+      <Text size="sm">
+        yt-dlp needs Deno or Node to solve the JavaScript challenge YouTube signs its media URLs
+        with. Without one, downloads fail with "HTTP Error 403: Forbidden". Install either, then
+        press "Check again" in Settings, or point the app at it there if it is not on PATH.
+      </Text>
+    </Alert>
   );
 }
 

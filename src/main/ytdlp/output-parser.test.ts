@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { PROGRESS_PREFIX } from './args';
+import { OUTPUT_PATH_PREFIX, PROGRESS_PREFIX } from './args';
 import {
   isPostProcessingStage,
   parseOutputPath,
+  parsePrintedOutputPath,
   parseProgressLine,
   parseStageLine,
 } from './output-parser';
@@ -105,6 +106,24 @@ describe('isPostProcessingStage', () => {
     // Otherwise the bar sits at 100% while ffmpeg transcodes and looks hung.
     expect(isPostProcessingStage('Extracting audio')).toBe(true);
     expect(isPostProcessingStage('Moving into place')).toBe(true);
+  });
+});
+
+describe('parsePrintedOutputPath', () => {
+  it('reads the path yt-dlp printed for our own template', () => {
+    expect(parsePrintedOutputPath(`${OUTPUT_PATH_PREFIX}C:\\music\\a.mp3`)).toBe('C:\\music\\a.mp3');
+  });
+
+  it('keeps a name with spaces and non-ASCII characters intact', () => {
+    expect(parsePrintedOutputPath(`${OUTPUT_PATH_PREFIX}C:\\music\\Żółć Ąę.mp3`)).toBe(
+      'C:\\music\\Żółć Ąę.mp3',
+    );
+  });
+
+  it('ignores every other line, including the log lines that also carry paths', () => {
+    expect(parsePrintedOutputPath('[MoveFiles] Moving file "a" to "b"')).toBeNull();
+    expect(parsePrintedOutputPath(OUTPUT_PATH_PREFIX)).toBeNull();
+    expect(parsePrintedOutputPath('')).toBeNull();
   });
 });
 

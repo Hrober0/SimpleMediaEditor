@@ -2,10 +2,12 @@ import { dirname, join } from 'node:path';
 import { app } from 'electron';
 import {
   BINARY_DESCRIPTORS,
+  JS_RUNTIME_IDS,
   type BinaryDescriptor,
   type BinaryId,
   type BinarySource,
   type BinaryStatus,
+  type JsRuntime,
 } from '@shared/binaries';
 import { AppFailure, errorMessage } from './errors';
 import { runProcess } from './jobs/runner';
@@ -63,6 +65,22 @@ export class BinaryResolver {
     // A bare command name resolved from PATH has no directory to hand over.
     const directory = dirname(ffmpegPath);
     return directory === '.' ? null : directory;
+  }
+
+  /**
+   * The runtime yt-dlp solves YouTube's JavaScript challenges with. Without one,
+   * YouTube only offers formats that then fail with HTTP 403, so it is passed on
+   * every call: yt-dlp looks for Deno by itself but never for Node.
+   */
+  jsRuntime(): JsRuntime | null {
+    for (const id of JS_RUNTIME_IDS) {
+      const status = this.statuses.find((entry) => entry.id === id);
+      if (!status?.path) continue;
+      // A bare command name is handed over as no path at all: yt-dlp wants a real
+      // path or a directory there, and can find the runtime on PATH itself.
+      return { name: id, path: status.source === 'path' ? null : status.path };
+    }
+    return null;
   }
 
   private async resolve(descriptor: BinaryDescriptor): Promise<BinaryStatus> {
