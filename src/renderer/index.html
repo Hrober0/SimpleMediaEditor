@@ -6,11 +6,13 @@
     <!--
       The renderer only ever loads its own bundle. Remote thumbnails are the one
       external resource, so https images are allowed and nothing else is.
-      connect-src covers the Vite dev server's HMR socket.
+      connect-src covers the Vite dev server's HMR socket. media-src is the
+      mediaeditor-file: scheme main registers to stream a local file into a
+      <video>/<audio> element without the renderer ever touching it directly.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' ws: http://localhost:*; object-src 'none'; base-uri 'none'; form-action 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; media-src mediaeditor-file:; connect-src 'self' ws: http://localhost:*; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <title>MediaEditor</title>
   </head>

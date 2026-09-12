@@ -12,6 +12,8 @@ import type { Job } from './jobs';
 import type { CoverImage, OpenedMedia, SaveTagsRequest } from './metadata';
 import type { Result } from './result';
 import type { AppSettings } from './settings';
+import type { TrimRequest } from './trim';
+import type { WaveformPeaks } from './waveform';
 
 export interface AppEnvironment {
   appVersion: string;
@@ -39,6 +41,12 @@ export interface GrabFrameRequest {
   atSeconds: number;
 }
 
+export interface WaveformRequest {
+  path: string;
+  /** How many min/max pairs to reduce the audio to. */
+  bucketCount: number;
+}
+
 /** Channels the renderer invokes and awaits. */
 export interface IpcInvokeContract {
   'app:environment': { request: void; response: AppEnvironment };
@@ -55,6 +63,8 @@ export interface IpcInvokeContract {
   'media:coverFromClipboard': { request: void; response: Result<CoverImage> };
   'media:grabFrame': { request: GrabFrameRequest; response: Result<CoverImage> };
   'media:saveTags': { request: SaveTagsRequest; response: Result<{ jobId: string }> };
+  'media:waveform': { request: WaveformRequest; response: Result<WaveformPeaks> };
+  'media:trim': { request: TrimRequest; response: Result<{ jobId: string }> };
   'ytdlp:inspect': { request: { url: string }; response: Result<UrlInspection> };
   'ytdlp:download': { request: StartDownloadsRequest; response: Result<{ jobIds: string[] }> };
   'jobs:list': { request: void; response: readonly Job[] };
@@ -95,6 +105,8 @@ export interface MediaEditorApi {
   coverFromClipboard(): Promise<Result<CoverImage>>;
   grabFrame(request: GrabFrameRequest): Promise<Result<CoverImage>>;
   saveTags(request: SaveTagsRequest): Promise<Result<{ jobId: string }>>;
+  waveform(request: WaveformRequest): Promise<Result<WaveformPeaks>>;
+  trimMedia(request: TrimRequest): Promise<Result<{ jobId: string }>>;
   inspectUrl(url: string): Promise<Result<UrlInspection>>;
   startDownloads(request: StartDownloadsRequest): Promise<Result<{ jobIds: string[] }>>;
   listJobs(): Promise<readonly Job[]>;

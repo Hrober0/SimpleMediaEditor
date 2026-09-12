@@ -448,16 +448,29 @@ Still unverified: the GUI itself, and Linux behaviour.
 
 ---
 
-## Phase 3 — Trim and timeline ← next
+## Phase 3 — Trim and timeline ← in progress
 
-The largest piece of UI work.
+The largest piece of UI work. Renderer module folder/id/`TrimPanel` stay named
+`trim` — same relationship as the meta editor's `tags` folder/id under the
+displayed title "Media meta editor" — but the sidebar shows **"Track Edit"**:
+cutting is the first thing this tool does, not the only editing feature it is
+expected to ever grow.
 
-- `<video>` element for preview, WaveSurfer.js for the waveform
+- `<video>`/`<audio>` element for preview, a custom canvas waveform
 - Waveform peaks are computed in the main process (ffmpeg → raw PCM → downsampled
   peaks array) and sent to the renderer. Never decode a long file in the renderer.
-- Cut model: a list of **keep** ranges, not a single in/out pair. Trimming from the
-  start, the end, or removing an interior segment are then the same operation, and
-  multiple middle cuts cost nothing extra.
+- Cut model: the track is a list of **segments** still kept from the original file
+  (internally the same shape as a keep-range). There is at most **one active
+  selection** at a time, made by dragging on the waveform; it is pure UI state
+  until the user presses **Cut**, which is the one thing that actually removes it
+  from the segments. A selection left uncommitted changes nothing — Save writes
+  out whatever the segments currently are, cut or not.
+- The waveform only ever draws the current segments: a cut closes the gap rather
+  than leaving a highlighted "removed" band, so the display always reads as "the
+  track, as it now is," not "the original file with some of it marked."
+  Playback follows the same rule — during preview, reaching a cut part jumps the
+  underlying `<video>`/`<audio>` element straight to the next kept segment, so
+  what plays back matches what Save would produce.
 - Zoom, snap-to-keyframe indicators, keyboard scrubbing
 
 Export has two modes, exposed explicitly:
@@ -472,6 +485,98 @@ Interior cuts are split-then-concat via the concat demuxer.
 Unplayable inputs: HEVC and 10-bit mp4 will not preview in Chromium. On load,
 ffprobe the codec; if it is not web-playable, generate a fast low-resolution proxy
 for the timeline and apply the edit to the original file.
+
+**Built and verified against the real ffmpeg** (argument construction is unit
+tested; the cut, the concat path, and cover-art carry-through are additionally
+driven against locally generated media in `trim-job.integration.test.ts`, no
+network needed):
+
+- `shared/trim.ts` holds the keep-range model: `sanitizeKeepRanges` sorts,
+  clamps to the file's duration, drops a slip of the pointer, and merges
+  touching or overlapping ranges, so the export step always sees a clean list
+  regardless of how the UI produced it.
+- The same file holds the display-time/original-time mapping the gap-closed
+  waveform and gap-skipping playback both depend on: `originalToDisplaySeconds`
+  and `displayToOriginalSeconds` convert between the edited track's own
+  timeline and the original file's, `nextKeptStart` says where to jump when
+  playback runs into a cut part, and `cutRange` removes a display-time
+  selection from the segments — splitting, shrinking, or dropping whichever
+  segment(s) it falls across, including a selection that spans a boundary an
+  earlier cut already made. All four are pure and unit tested directly; this
+  is exactly the kind of interval arithmetic that is silently wrong rather
+  than loudly wrong.
+- `main/media/trim-args.ts` builds the ffmpeg invocation for both modes. Fast
+  mode is `-ss`/`-t` stream copy per range, joined by the concat demuxer when
+  there is more than one; precise mode is a single `trim`/`atrim` +
+  `concat` filter pass, re-encoded with a codec chosen per container
+  (`libmp3lame` for mp3, `pcm_s16le` for wav, `libvpx-vp9` for webm, and so
+  on). Both exclude cover art by construction: the `0:V`/`0:a` stream
+  specifiers used throughout never match an attached-picture stream.
+- Measured against a real ffmpeg: the concat demuxer does **not** forward an
+  mp3's ID3 tags through `-map_metadata 0`, unlike a direct single-file input —
+  a multi-range fast trim would otherwise come out silently untagged. Every
+  ffmpeg call that produces final output now also writes tags explicitly
+  (`MetadataToKeep` in `trim-args.ts`), not just via `-map_metadata`.
+- Cover art survives a trim through a second, separate pass rather than being
+  taught to the cut itself: `main/media/trim-job.ts` extracts the source's
+  embedded picture with the same `extractEmbeddedCover` Phase 2 uses, then
+  re-attaches it with the same `buildWriteArgs` Phase 2 uses for a tag edit. If
+  the embedded picture cannot be read back out, the trim still succeeds,
+  without artwork, rather than failing the whole export over a cover image.
+- Both stages write to a temp sibling of the destination and are verified
+  (right streams present, duration within tolerance of what was asked for)
+  before anything replaces the user's file — the same `safe-write.ts` path
+  Phase 2 uses.
+- A segment or concat-list temp file must keep its extension at the very end
+  of the filename, not appended after it (`foo.mp3.segment-0` has none, and
+  ffmpeg refuses to write it for want of a muxer to guess) — caught by the
+  integration test for a multi-range trim, not by the argument-construction
+  unit tests, which is exactly why that test exists.
+- Local audio/video preview needed its own answer: the renderer has no
+  filesystem access and the IPC contract only carries JSON-shaped responses,
+  neither of which fits handing a `<video>`/`<audio>` element a
+  multi-hundred-MB file. `src/main/media-protocol.ts` registers a
+  `mediaeditor-file://` scheme that forwards to Chromium's own `file://`
+  loader (which already answers Range requests, the thing that makes seeking
+  possible without reading the whole file first), after checking the
+  requested path is one this app would open at all. `index.html`'s CSP grants
+  `media-src` to that scheme alone.
+
+Playback controls, added after the first round of real-use feedback: go to
+start, loop the current selection, and zoom in to it / back out to the whole
+track, all next to the play button and all with a keyboard shortcut (Space,
+Home, L, +, -; Escape deselects, X cuts). Shortcuts are ignored while focus is
+in a text field. "Zoom in" narrows the waveform to exactly the current
+selection rather than being a general-purpose zoom control — the ask was to
+see the selected part more closely, not to pan around an arbitrary level of
+detail.
+
+A seek issued right after opening a file, before it had ever played, could
+silently snap back to 0: setting `currentTime` before `HAVE_METADATA` is
+dropped rather than queued, so `TrimPanel`'s `seek` now defers to a
+`loadedmetadata` listener when the element isn't ready yet, and the
+`timeupdate` handler ignores whatever position the element reports while
+`element.seeking` is still true, so a stale reading from mid-seek cannot
+clobber the optimistic UI update.
+
+Still open:
+
+- Keyboard scrubbing (frame-by-frame arrow-key stepping) — the shortcuts above
+  cover play/seek/loop/zoom, not fine-grained stepping.
+- Visual snap-to-keyframe indicator for fast mode — the backend reports the
+  actual output duration on verification, but the UI does not yet show where
+  a fast cut landed versus what was asked for.
+- The HEVC/10-bit proxy path for files that will not preview in Chromium.
+  Right now such a file simply will not play in the `<video>` element; nothing
+  generates a substitute preview yet.
+- The GUI itself is unverified from this machine: the sandboxed environment
+  this was built in could not launch the real Electron window (a `SettingsStore`
+  construction failure at the very first line of `main/index.ts`, before any
+  of this phase's own code runs — an environment limitation, not a regression).
+  Needs a human running `npm run dev` to click through: opening a file,
+  dragging a selection on the waveform, playing it back with loop and zoom,
+  and saving both a fast and a precise trim. Linux behavior is unverified as
+  well.
 
 ---
 

@@ -44,6 +44,9 @@ import { probeFile } from './media/probe';
 import { validateSaveTagsRequest } from './media/save-request';
 import { createTagWriteJob } from './media/tag-job';
 import { readTagValues } from './media/tags';
+import { createTrimJob } from './media/trim-job';
+import { validateTrimRequest } from './media/trim-request';
+import { computeWaveformPeaks } from './media/waveform';
 import type { SettingsStore } from './settings-store';
 import { createDownloadJob } from './ytdlp/download';
 import { inspectUrl } from './ytdlp/inspect';
@@ -204,6 +207,35 @@ export function registerIpcHandlers(deps: IpcDeps): void {
           ffprobePath: binaries.require('ffprobe'),
         }),
       );
+      return ok({ jobId: job.id });
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+  handle('media:waveform', async (request) => {
+    try {
+      if (!isAbsolute(request.path)) throw new AppFailure('Expected an absolute path.');
+      const info = await probeFile(request.path, { ffprobePath: binaries.require('ffprobe') });
+      if (!info.audio) throw new AppFailure('That file has no audio to show a waveform for.');
+
+      const bucketCount = Math.min(20_000, Math.max(1, Math.round(request.bucketCount)));
+      const peaks = await computeWaveformPeaks(
+        request.path,
+        info.durationSeconds ?? 0,
+        bucketCount,
+        { ffmpegPath: binaries.require('ffmpeg') },
+      );
+      return ok(peaks);
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+  handle('media:trim', (request) => {
+    try {
+      const validated = validateTrimRequest(request);
+      const job = queue.enqueue(createTrimJob(validated, coverDeps()));
       return ok({ jobId: job.id });
     } catch (error) {
       return failure(error);

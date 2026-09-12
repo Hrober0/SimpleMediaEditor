@@ -25,6 +25,8 @@ export interface SupportedFormat {
   ext: string;
   kind: MediaKind;
   label: string;
+  /** What the media protocol serves the file as, so Chromium picks a decoder. */
+  mimeType: string;
   /** Can be tagged/trimmed directly, without converting first. */
   editable: boolean;
   /** Plays in Chromium without a proxy file. */
@@ -38,6 +40,7 @@ export const SUPPORTED_FORMATS: readonly SupportedFormat[] = [
     ext: 'mp3',
     kind: 'audio',
     label: 'MP3',
+    mimeType: 'audio/mpeg',
     editable: true,
     webPlayable: true,
     tagFamily: 'id3',
@@ -47,6 +50,7 @@ export const SUPPORTED_FORMATS: readonly SupportedFormat[] = [
     ext: 'm4a',
     kind: 'audio',
     label: 'M4A (AAC)',
+    mimeType: 'audio/mp4',
     editable: true,
     webPlayable: true,
     tagFamily: 'mp4',
@@ -56,6 +60,7 @@ export const SUPPORTED_FORMATS: readonly SupportedFormat[] = [
     ext: 'opus',
     kind: 'audio',
     label: 'Opus',
+    mimeType: 'audio/ogg',
     editable: true,
     webPlayable: true,
     tagFamily: 'vorbis',
@@ -67,6 +72,7 @@ export const SUPPORTED_FORMATS: readonly SupportedFormat[] = [
     ext: 'flac',
     kind: 'audio',
     label: 'FLAC',
+    mimeType: 'audio/flac',
     editable: true,
     webPlayable: true,
     tagFamily: 'vorbis',
@@ -76,6 +82,7 @@ export const SUPPORTED_FORMATS: readonly SupportedFormat[] = [
     ext: 'wav',
     kind: 'audio',
     label: 'WAV',
+    mimeType: 'audio/wav',
     editable: true,
     webPlayable: true,
     // RIFF INFO chunks: ffmpeg maps title/artist/album/date/genre/comment onto
@@ -87,6 +94,7 @@ export const SUPPORTED_FORMATS: readonly SupportedFormat[] = [
     ext: 'mp4',
     kind: 'video',
     label: 'MP4',
+    mimeType: 'video/mp4',
     editable: true,
     webPlayable: true,
     tagFamily: 'mp4',
@@ -96,6 +104,7 @@ export const SUPPORTED_FORMATS: readonly SupportedFormat[] = [
     ext: 'webm',
     kind: 'video',
     label: 'WebM',
+    mimeType: 'video/webm',
     editable: true,
     webPlayable: true,
     tagFamily: 'matroska',
@@ -107,6 +116,7 @@ export const SUPPORTED_FORMATS: readonly SupportedFormat[] = [
     ext: 'mkv',
     kind: 'video',
     label: 'MKV',
+    mimeType: 'video/x-matroska',
     editable: true,
     webPlayable: false,
     tagFamily: 'matroska',

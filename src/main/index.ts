@@ -5,11 +5,15 @@ import { errorMessage } from './errors';
 import { JobQueue } from './jobs/queue';
 import { broadcast, registerIpcHandlers } from './ipc';
 import { clearCoverDirectory, coverDirectory } from './media/cover-art';
+import { registerMediaProtocolHandler, registerMediaProtocolScheme } from './media-protocol';
 import { SettingsStore } from './settings-store';
 
 const settings = new SettingsStore();
 const binaries = new BinaryResolver((id) => settings.binaryPathOverride(id));
 const queue = new JobQueue(() => settings.get().jobConcurrency);
+
+// Must run before app.whenReady().
+registerMediaProtocolScheme();
 
 // A second instance would fight over the settings file and the job temp directories.
 if (!app.requestSingleInstanceLock()) {
@@ -31,6 +35,7 @@ async function start(): Promise<void> {
   if (process.platform === 'win32') app.setAppUserModelId('dev.mediaeditor.app');
 
   await app.whenReady();
+  registerMediaProtocolHandler();
   await settings.load();
   await binaries.refresh();
   // Cover art prepared in an earlier run is of no use to this one, and each one
