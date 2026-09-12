@@ -111,7 +111,9 @@ describe('isPostProcessingStage', () => {
 
 describe('parsePrintedOutputPath', () => {
   it('reads the path yt-dlp printed for our own template', () => {
-    expect(parsePrintedOutputPath(`${OUTPUT_PATH_PREFIX}C:\\music\\a.mp3`)).toBe('C:\\music\\a.mp3');
+    expect(parsePrintedOutputPath(`${OUTPUT_PATH_PREFIX}C:\\music\\a.mp3`)).toBe(
+      'C:\\music\\a.mp3',
+    );
   });
 
   it('keeps a name with spaces and non-ASCII characters intact', () => {
