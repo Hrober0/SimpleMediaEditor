@@ -22,15 +22,15 @@ import {
 } from '@shared/metadata';
 import type { ErrorInfo } from '@shared/result';
 import { api } from '../../api';
+import { ChangeMediaButton } from '../../components/ChangeMediaButton';
 import { FailureAlert } from '../../components/FailureAlert';
+import { MediaFileInput } from '../../components/MediaFileInput';
+import { MediaSummary } from '../../components/MediaSummary';
 import { PanelActions } from '../../components/PanelActions';
 import { useJobs } from '../../state/JobsContext';
 import { useNavigation } from '../../state/NavigationContext';
 import { META_EDITOR } from '../types';
-import { ChangeMediaButton } from './ChangeMediaButton';
 import { CoverArtCard } from './CoverArtCard';
-import { MediaFileInput } from './MediaFileInput';
-import { MediaSummary } from './MediaSummary';
 import { toCoverChange, type CoverDraft } from './cover-draft';
 
 /** Long enough that covering the panel is feedback rather than a blink. */
@@ -142,7 +142,7 @@ export function TagsPanel(): ReactNode {
   const canEdit = media && format;
 
   return (
-    <Stack gap="lg" maw={860} pos="relative">
+    <Stack gap="lg" pos="relative">
       <LoadingOverlay visible={overlayVisible} zIndex={10} transitionProps={{ duration: 150 }} />
 
       {canEdit ? (

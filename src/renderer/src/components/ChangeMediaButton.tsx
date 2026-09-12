@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Button, Stack, Text } from '@mantine/core';
 import { IconFolderOpen } from '@tabler/icons-react';
 import type { ErrorInfo } from '@shared/result';
-import { FileDropzone } from '../../components/FileDropzone';
+import { FileDropzone } from './FileDropzone';
 import { browseForMedia, openDroppedFile } from './media-drop';
 
 interface ChangeMediaButtonProps {

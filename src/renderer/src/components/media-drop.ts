@@ -1,6 +1,6 @@
 import { SUPPORTED_FORMATS, formatForExtension } from '@shared/media-types';
 import type { ErrorInfo } from '@shared/result';
-import { api } from '../../api';
+import { api } from '../api';
 
 interface MediaSource {
   onOpen: (path: string) => void;

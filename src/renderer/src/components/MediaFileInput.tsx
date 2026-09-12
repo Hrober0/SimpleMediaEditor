@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Button, Stack, Text, ThemeIcon } from '@mantine/core';
 import { IconFileMusic, IconFolderOpen, IconUpload, IconX } from '@tabler/icons-react';
 import type { ErrorInfo } from '@shared/result';
-import { FileDropzone } from '../../components/FileDropzone';
+import { FileDropzone } from './FileDropzone';
 import { browseForMedia, openDroppedFile, supportedExtensions } from './media-drop';
 
 interface MediaFileInputProps {
