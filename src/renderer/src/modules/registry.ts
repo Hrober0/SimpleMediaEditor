@@ -1,6 +1,6 @@
 import { downloadModule } from './download';
+import { metaEditorModule } from './meta-editor';
 import { settingsModule } from './settings';
-import { tagsModule } from './tags';
 import { trackEditModule } from './track-edit';
 import type { UtilityModule } from './types';
 
@@ -10,7 +10,7 @@ import type { UtilityModule } from './types';
  */
 export const MODULE_REGISTRY: readonly UtilityModule[] = [
   downloadModule,
-  tagsModule,
+  metaEditorModule,
   trackEditModule,
   settingsModule,
 ];

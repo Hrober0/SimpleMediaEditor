@@ -44,7 +44,7 @@ const OVERLAY_DELAY_MS = 300;
  * verified temp-then-replace path as every other export, so a failed save cannot
  * leave the user without their file.
  */
-export function TagsPanel(): ReactNode {
+export function MetaEditorPanel(): ReactNode {
   const { revealJobs, waitForJob } = useJobs();
   const { takeFileFor } = useNavigation();
 

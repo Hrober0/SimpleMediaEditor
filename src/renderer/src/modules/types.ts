@@ -20,7 +20,7 @@ export interface UtilityModule {
  * call it what the sidebar calls it — so both come from here rather than from a
  * string repeated in two places, or from one module importing another.
  */
-export const META_EDITOR = { id: 'tags', title: 'Media meta editor' } as const;
+export const META_EDITOR = { id: 'meta-editor', title: 'Media meta editor' } as const;
 
 export type ModuleSection = 'download' | 'edit' | 'batch' | 'tools';
 
