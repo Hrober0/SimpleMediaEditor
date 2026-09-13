@@ -60,7 +60,9 @@ export function App(): ReactNode {
         breakpoint: JOBS_PANEL_BREAKPOINT,
         collapsed: { mobile: true, desktop: !asideOpened },
       }}
-      padding="lg"
+      // The panel pads itself inside its scroll region instead, so the
+      // scrollbar lands in the gutter rather than on top of the content.
+      padding={0}
     >
       <AppShell.Navbar p="sm">
         <Stack gap="lg">
@@ -94,9 +96,16 @@ export function App(): ReactNode {
             list does in the aside below — otherwise this content overflows
             into the page itself, and the native scrollbar for that ends up
             at the outer edge of the window, past the aside entirely, which
-            reads as though it belongs to Jobs rather than to this panel. */}
+            reads as though it belongs to Jobs rather than to this panel.
+
+            The padding is on the content, not on Main: Mantine's scrollbar
+            floats over the right edge of the viewport, so padding outside it
+            would leave the scrollbar sitting on the panel with empty space
+            beside it. */}
         <ScrollArea h="100%" type="auto">
-          {active ? <ModulePanel module={active} /> : <Text c="dimmed">No module selected.</Text>}
+          <Box p="lg">
+            {active ? <ModulePanel module={active} /> : <Text c="dimmed">No module selected.</Text>}
+          </Box>
         </ScrollArea>
 
         {/* Floating rather than in a header bar: there is no header any more,
