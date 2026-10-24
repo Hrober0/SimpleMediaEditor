@@ -8,12 +8,12 @@ Guidance for Claude Code working in this repository.
 downloading media from YouTube. It is a shell hosting independent utility modules;
 new tools are added as modules rather than by extending existing ones.
 
-Read [plan.md](plan.md) for the phased roadmap, architecture rationale, and current
-priorities. Keep it updated as phases complete — it is the source of truth for what
-is built and what is next.
-
-**Current priority order:** (1) YouTube music download to mp3, (2) setting author and
-thumbnail on a selected file. Do not start later phases while these are unfinished.
+[roadmap.md](roadmap.md) is what comes next, in priority order from top to bottom:
+work on the top item, and do not start one further down while it is unfinished.
+[done.md](done.md) is what is built, with the date each part landed and the reasoning
+behind the architecture. When roadmap work is finished, move it to `done.md` with
+today's date, and keep both files current: together they are the source of truth for
+what is built and what is next. Neither numbers its items.
 
 ## Stack
 
@@ -22,7 +22,7 @@ Media work is delegated to `ffmpeg`/`ffprobe`; YouTube to `yt-dlp`.
 
 UI is built from Mantine components — reach for one before writing a custom
 component or hand-rolling CSS. Theme values (`useMantineTheme`, style props) rather
-than hardcoded colors and spacing, so dark mode keeps working. The Phase 3 timeline
+than hardcoded colors and spacing, so dark mode keeps working. The Track Edit waveform
 is the deliberate exception: it is a custom canvas component with Mantine chrome
 around it.
 
@@ -30,8 +30,6 @@ Target platforms are Windows and Linux. Both matter equally — never write a
 Windows-only path, and never assume POSIX either.
 
 ## Commands
-
-<!-- Fill in as the project is scaffolded. -->
 
 ```
 npm run dev              # Vite + Electron in watch mode
@@ -56,6 +54,43 @@ src/main/       Node side: process spawning, filesystem, job queue
 src/preload/    contextBridge — the only surface the renderer can see
 src/shared/     types imported by both sides, incl. the IPC contract
 src/renderer/   React UI; modules/ holds one folder per utility
+```
+
+In more detail, as a map of where things live:
+
+```
+src/
+  main/                   the only place that spawns processes or touches disk
+    index.ts                app lifecycle, window creation, external-link handling
+    binaries.ts             ffmpeg/ffprobe/yt-dlp/Deno/Node discovery and probing
+    ipc.ts                  channel handlers, validating everything the UI sends
+    settings-store.ts       settings file, written atomically
+    settings-validation.ts  untrusted values in, valid settings out
+    media-protocol.ts       serves local files to <video>/<audio>, with Range support
+    errors.ts               AppFailure: an error carrying tool output worth showing
+    jobs/
+      queue.ts              the job queue: concurrency, progress, cancel
+      runner.ts             the only spawn wrapper; kills whole process trees
+    ytdlp/                  argument construction, output parsing, URL inspection, download job
+    media/
+      probe.ts              ffprobe output to MediaInfo
+      tags.ts, write-args.ts, tag-job.ts   reading and writing tags and cover art
+      cover-art.ts          every cover image becomes one baseline JPEG
+      safe-write.ts         temp sibling, verify, then replace: every write goes here
+      waveform.ts           peaks for the Track Edit waveform
+      trim-*.ts, keyframes.ts   cutting and joining for Track Edit export
+  preload/                contextBridge: the only surface the renderer can see
+  shared/                 types and pure helpers imported by both sides
+    ipc-contract.ts         every channel, typed; a drift is a compile error
+    filenames.ts            the one filename sanitizer
+    media-types.ts          the SupportedFormat table
+    trim.ts                 the Track Edit segment model
+  renderer/src/
+    App.tsx                 the shell: nav built from the registry, jobs panel
+    api.ts                  the renderer's single point of contact with main
+    state/                  environment, settings, jobs and navigation providers
+    components/             UI shared between modules
+    modules/                one folder per utility, plus registry.ts
 ```
 
 ## Rules that matter

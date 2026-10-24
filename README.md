@@ -1,151 +1,80 @@
 # MediaEditor
 
-A local desktop app for editing audio/video files and downloading media from
-YouTube. Electron + React + Mantine on the front, `ffmpeg` and `yt-dlp` doing the
-actual media work as child processes.
+**A simple, fast desktop tool for your music and video files.** Paste a YouTube
+link and get a tagged MP3 with cover art. Drop a file in to fix its artist, title
+or cover. Cut out the parts you do not want and save. No accounts, no cloud,
+nothing leaves your machine.
 
-Nothing leaves your machine, and there is no account or cloud anything.
+![Downloading from YouTube](docs/screenshots/download.png)
 
-See [plan.md](plan.md) for the roadmap and the reasoning behind the architecture,
-and [CLAUDE.md](CLAUDE.md) for the rules that code in this repo follows.
+![Editing a track](docs/screenshots/edit.png)
 
-## What works today
+## What it does
 
-- **YouTube download** — paste a video or playlist URL, preview what it is, pick
-  MP3 or MP4, and queue it. MP3s arrive with tags and cover art already embedded.
-  Live progress, working cancel, and yt-dlp's own error messages shown verbatim.
-- **Settings** — tool paths, default download folder, how many jobs run at once.
+- **YouTube download.** Paste a video or playlist URL, see what it is, pick MP3
+  or MP4, and go. MP3s arrive with tags and cover art already embedded. Live
+  progress, a cancel that really stops everything, and yt-dlp's own error
+  message when something goes wrong.
+- **Media meta editor.** Set artist, title, album, year, genre and cover art on
+  an MP3 or MP4. Pick, drop or paste an image, or grab a frame from the video.
+- **Track Edit.** See the waveform, play it back, select a part and cut, delete
+  or paste it somewhere else. Export fast (no re-encoding) or precise (exact to
+  the frame).
 
-Next up is setting author and cover art on files you already have.
+Saving never puts your original at risk: every change is written to a temporary
+copy, checked, and only then swapped in.
 
-## Requirements
+## Install
 
-| Tool        | Why                                  | Notes                                         |
-| ----------- | ------------------------------------ | --------------------------------------------- |
-| Node.js 20+ | build tooling                        | only needed to develop or build               |
-| `yt-dlp`    | downloading                          | keep it updated — YouTube breaks old versions |
-| `ffmpeg`    | audio extraction, tagging, export    |                                               |
-| `ffprobe`   | reading media info, verifying output | ships with ffmpeg                             |
+Download the installer from the
+[latest release](https://github.com/Hrober0/MediaEditor/releases/latest).
 
-The three tools are **not bundled**; they are found at runtime. Resolution order is
-the path you set in Settings, then `PATH`, then a copy shipped alongside the app.
-If any are missing, the app opens on a setup screen naming them instead of failing
-later with something cryptic.
+MediaEditor uses a few free tools that you install once:
 
-On Windows, `winget install ffmpeg` and `winget install yt-dlp` are enough.
+| Tool                 | Used for                                  |
+| -------------------- | ----------------------------------------- |
+| `ffmpeg` / `ffprobe` | everything audio and video                |
+| `yt-dlp`             | downloading; keep it updated              |
+| Deno or Node.js      | needed by yt-dlp to download from YouTube |
 
-> yt-dlp may warn `No supported JavaScript runtime could be found … some formats
-may be missing`. Installing [Deno](https://deno.com) clears it and restores full
-> format availability. The warning shows up in the job log.
-
-## Commands
-
-```
-npm install              # once
-
-npm run dev              # Vite + Electron in watch mode
-npm run typecheck        # tsc, must pass before any change is done
-npm run lint             # eslint
-npm test                 # unit tests — fast, no network
-npm run test:watch       # unit tests in watch mode
-npm run test:integration # drives the real yt-dlp against YouTube (needs network)
-npm run format           # prettier
-
-npm run build            # typecheck + production bundle into out/
-npm run package          # installer for the current platform into release/
-```
-
-`npm test` never touches the network, so it is safe to run constantly.
-`npm run test:integration` really downloads a short video, checks the tags and
-cover art that come out, then cancels a large download and verifies nothing is
-left behind — it takes about ten seconds.
-
-## Layout
+On Windows:
 
 ```
-src/
-  main/           Node side — the only place that spawns processes or touches disk
-    index.ts        app lifecycle, window creation, external-link handling
-    binaries.ts     ffmpeg/ffprobe/yt-dlp discovery and version probing
-    ipc.ts          channel handlers, and validation of everything the UI sends
-    settings-store.ts       settings file, written atomically
-    settings-validation.ts  untrusted values in, valid settings out
-    errors.ts       AppFailure — an error carrying tool output worth showing
-    jobs/
-      queue.ts        the job queue: concurrency, progress, cancel
-      runner.ts       the only spawn wrapper; kills whole process trees
-    ytdlp/
-      args.ts         argument construction, kept pure
-      output-parser.ts  yt-dlp output -> progress, stage, output path
-      inspect.ts      what a URL points at, before committing to a download
-      download.ts     one download as a queue job
-  preload/        contextBridge — the only surface the renderer can see
-  shared/         types and helpers imported by both sides
-    ipc-contract.ts   every channel, typed; a drift is a compile error
-    filenames.ts      the one filename sanitizer
-    jobs.ts, settings.ts, download.ts, media-types.ts, result.ts, format.ts
-  renderer/       React UI
-    src/
-      App.tsx         the shell: nav built from the registry, job drawer
-      api.ts          the renderer's single point of contact with main
-      state/          environment, settings and jobs providers
-      components/     shared UI (job drawer, failure alert, tool status…)
-      modules/        one folder per utility, plus registry.ts
+winget install ffmpeg
+winget install yt-dlp
+winget install DenoLand.Deno
 ```
 
-Tests sit next to what they test (`*.test.ts`), with the network-dependent ones
-named `*.integration.test.ts`.
+On Linux, use your package manager for ffmpeg and
+[yt-dlp's own instructions](https://github.com/yt-dlp/yt-dlp#installation),
+since distribution packages are often too old for YouTube.
 
-**Adding a utility** means adding a folder under `src/renderer/src/modules/` that
-exports a `UtilityModule`, plus one line in `registry.ts`. The shell reads the
-registry; it does not know about individual modules.
+If a tool is missing, the app opens on a setup screen saying which one, and you
+can point it at a tool installed somewhere unusual in Settings.
 
-## Running it as an app on Windows
+Linux builds (AppImage and `.deb`) are produced but not yet tested.
 
-### With an installer (what you want for everyday use)
+## Building from source
 
-```
-npm run package
-```
-
-This produces `release/MediaEditor Setup 0.1.0.exe`. Run it — it is a normal NSIS
-installer, so it lets you choose the install location and creates Start-menu and
-desktop shortcuts for you. After that, MediaEditor behaves like any installed app
-and you can pin it to the taskbar.
-
-To get a proper icon instead of the default Electron one, drop a 256×256
-`icon.ico` into `build/` before packaging.
-
-### Without an installer (a shortcut to a portable build)
+Needs Node.js 22.
 
 ```
-npx electron-builder --dir
+npm install
+npm run dev       # run it with hot reload
+npm run package   # installer for your platform, written to release/
 ```
 
-That writes an unpacked app to `release/win-unpacked/`. Then:
+`npm test` runs the unit tests (no network) and `npm run test:integration` runs
+the ones that drive the real ffmpeg and yt-dlp. Code conventions and the project
+layout are in [CLAUDE.md](CLAUDE.md).
 
-1. Open `release/win-unpacked/` in Explorer.
-2. Right-click `MediaEditor.exe` → **Show more options** → **Send to** →
-   **Desktop (create shortcut)**.
-3. Optionally right-click the running app in the taskbar → **Pin to taskbar**.
+## Roadmap
 
-Note this folder is rebuilt by later packaging runs; the installer route is the
-sturdier one.
+Next up is a media library: point it at a folder, see everything grouped by
+genre, artist or album, and drag files between groups to retag them. The full
+plan is in [roadmap.md](roadmap.md), and what is already built, with dates, is in
+[done.md](done.md).
 
-### A shortcut that starts the dev version
+## License
 
-Useful while working on the app. Create a shortcut with this as its target:
-
-```
-cmd /c "cd /d C:\Coding\MediaEditor && npm run dev"
-```
-
-Set **Start in** to `C:\Coding\MediaEditor`. It opens a console window alongside
-the app — that console is where main-process logs and errors appear, which is the
-point.
-
-## Linux
-
-`npm run package` produces an AppImage and a `.deb`. Linux is a supported target
-but is currently **unverified** — path handling, filename rules and process
-killing are all written for both platforms, and none of it has been run there yet.
+[MIT](LICENSE)
