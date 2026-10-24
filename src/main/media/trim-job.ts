@@ -15,6 +15,7 @@ import { runProcess } from '../jobs/runner';
 import { extractEmbeddedCover, type CoverDeps } from './cover-art';
 import { parseProgressLine, progressFraction } from './ffmpeg-progress';
 import { probeFile } from './probe';
+import { readKeyframes, snapToKeyframes } from './keyframes';
 import { fileExists, removeQuietly, replaceFile, tempOutputPath } from './safe-write';
 import { readTagValues } from './tags';
 import {
@@ -66,13 +67,24 @@ async function runTrim(
   if (!format) throw new AppFailure(`.${source.ext} files cannot be trimmed.`);
   if (!format.editable) throw new AppFailure(`${format.label} files cannot be trimmed directly.`);
 
-  const ranges = sanitizeKeepRanges(request.ranges, source.durationSeconds ?? 0);
-  if (ranges.length === 0) {
+  const requested = sanitizeKeepRanges(request.ranges, source.durationSeconds ?? 0);
+  if (requested.length === 0) {
     throw new AppFailure('Nothing was kept — at least one range of the file must remain.');
   }
 
   const hasAudio = source.audio !== null;
   const hasVideo = source.video !== null;
+
+  let ranges = requested;
+  if (request.mode === 'fast' && hasVideo) {
+    context.setDetail('Finding keyframes');
+    const keyframes = await readKeyframes(request.sourcePath, {
+      ffprobePath: deps.ffprobePath,
+      signal: context.signal,
+    });
+    if (context.signal.aborted) return;
+    ranges = snapToKeyframes(requested, keyframes);
+  }
   const expectedSeconds = totalKeptSeconds(ranges);
 
   await mkdir(dirname(request.destinationPath), { recursive: true });
@@ -126,7 +138,12 @@ async function runTrim(
       signal: context.signal,
     });
 
-    const mismatch = describeTrimMismatch(written, expectedSeconds, hasAudio, hasVideo);
+    const mismatch = describeTrimMismatch(written, {
+      expectedSeconds,
+      partCount: ranges.length,
+      hasAudio,
+      hasVideo,
+    });
     if (mismatch) {
       throw new AppFailure(
         `The trimmed file did not come out right — ${mismatch}. Your original was left unchanged.`,
@@ -301,22 +318,31 @@ async function reattachCover(options: ReattachOptions): Promise<ReattachResult> 
   return ok ? 'attached' : 'cancelled';
 }
 
-function describeTrimMismatch(
-  output: MediaInfo,
-  expectedSeconds: number,
-  hasAudio: boolean,
-  hasVideo: boolean,
-): string | null {
+interface ExpectedOutput {
+  expectedSeconds: number;
+  partCount: number;
+  hasAudio: boolean;
+  hasVideo: boolean;
+}
+
+/**
+ * Even with every start moved onto a keyframe, each copied part can run a
+ * little long: the video and audio streams rarely end on the same instant, and
+ * the longer of the two sets the part's length. That slack is per part, so it
+ * grows with how many parts are joined.
+ */
+const SLACK_PER_PART_SECONDS = 0.25;
+
+function describeTrimMismatch(output: MediaInfo, expected: ExpectedOutput): string | null {
+  const { expectedSeconds, partCount, hasAudio, hasVideo } = expected;
   if (output.byteSize <= 0) return 'the new file is empty';
   if (hasAudio && !output.audio) return 'the audio stream is missing from the new file';
   if (hasVideo && !output.video) return 'the video stream is missing from the new file';
 
   const after = output.durationSeconds;
   if (after !== null && expectedSeconds > 0) {
-    // Fast mode cuts on the nearest keyframe, which can land a couple of
-    // seconds off the requested point — this only needs to catch a cut that
-    // is wrong, not one that merely snapped.
-    const allowed = Math.max(2, expectedSeconds * 0.05);
+    // Only needs to catch a cut that is wrong, not one that is a frame or two off.
+    const allowed = Math.max(2, expectedSeconds * 0.05, partCount * SLACK_PER_PART_SECONDS);
     if (Math.abs(expectedSeconds - after) > allowed) {
       return `the new file is ${after.toFixed(1)}s long instead of the expected ${expectedSeconds.toFixed(1)}s`;
     }

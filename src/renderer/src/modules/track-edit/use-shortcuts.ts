@@ -5,6 +5,8 @@ export interface TrackEditActions {
   seek: (displaySeconds: number) => void;
   deselect: () => void;
   cutSelection: () => void;
+  deleteSelection: () => void;
+  paste: () => void;
   toggleLoop: () => void;
   zoomToSelection: () => void;
   zoomOut: () => void;
@@ -15,6 +17,8 @@ const SHORTCUTS: Record<string, (actions: TrackEditActions) => void> = {
   Home: (actions) => actions.seek(0),
   Escape: (actions) => actions.deselect(),
   x: (actions) => actions.cutSelection(),
+  v: (actions) => actions.paste(),
+  Backspace: (actions) => actions.deleteSelection(),
   l: (actions) => actions.toggleLoop(),
   '+': (actions) => actions.zoomToSelection(),
   '=': (actions) => actions.zoomToSelection(),

@@ -3,6 +3,10 @@
  * the start, trimming the end, and removing an interior segment are then the
  * same operation — just a different set of ranges — and multiple interior
  * cuts cost nothing extra.
+ *
+ * The list is in play order, not in the original file's order: a part that was
+ * cut and pasted elsewhere plays where it was pasted, and a part pasted twice
+ * appears twice.
  */
 
 export interface KeepRange {
@@ -26,9 +30,11 @@ export interface TrimRequest {
 }
 
 /**
- * Sorted, clamped to the file's duration, stripped of empty or out-of-range
- * entries, and merged where two ranges touch or overlap — so a request built
- * from imprecise UI dragging always becomes a clean, non-overlapping list.
+ * Clamped to the file's duration, stripped of empty or out-of-range entries,
+ * and joined where one range carries straight on from the one before it, so a
+ * request built from imprecise UI dragging always becomes a clean list.
+ *
+ * Order is kept as given rather than sorted, since it is the play order.
  */
 export function sanitizeKeepRanges(
   ranges: readonly KeepRange[],
@@ -39,138 +45,210 @@ export function sanitizeKeepRanges(
       startSeconds: clamp(range.startSeconds, 0, durationSeconds),
       endSeconds: clamp(range.endSeconds, 0, durationSeconds),
     }))
-    .filter((range) => range.endSeconds - range.startSeconds > MIN_RANGE_SECONDS)
-    .sort((a, b) => a.startSeconds - b.startSeconds);
-
-  const merged: KeepRange[] = [];
-  for (const range of clamped) {
-    const last = merged[merged.length - 1];
-    if (last && range.startSeconds <= last.endSeconds) {
-      last.endSeconds = Math.max(last.endSeconds, range.endSeconds);
-    } else {
-      merged.push({ ...range });
-    }
-  }
-  return merged;
+    .filter((range) => range.endSeconds - range.startSeconds > MIN_RANGE_SECONDS);
+  return joinContinuing(clamped);
 }
 
 /** Below this, a range is a slip of the pointer rather than an intended cut. */
 const MIN_RANGE_SECONDS = 0.05;
+
+/**
+ * Closer than this to a segment's edge, a cut or paste point is taken to be
+ * the edge itself, so splitting there does not leave a sliver of a segment.
+ */
+const EDGE_SECONDS = 0.001;
 
 export function totalKeptSeconds(ranges: readonly KeepRange[]): number {
   return ranges.reduce((total, range) => total + (range.endSeconds - range.startSeconds), 0);
 }
 
 /**
- * The track as it plays and displays now is the segments with every cut
- * closed up — no gaps. These convert between that "display" timeline (what
- * the waveform draws, what the playhead moves along) and the original
- * file's own timeline (what a segment's `startSeconds`/`endSeconds` and the
- * source's peaks are measured in).
+ * The track as it plays and displays now is the segments, in order, with
+ * every cut closed up: no gaps. "Display" time is that track's own timeline
+ * (what the waveform draws, what the playhead moves along); "original" time is
+ * the file's (what a segment's bounds and the source's peaks are measured in).
+ *
+ * Because segments can be reordered or repeated, one original time can sit at
+ * several display times. A playback position is therefore a segment plus a
+ * time inside it, never an original time alone.
  */
-export function originalToDisplaySeconds(
-  segments: readonly KeepRange[],
-  originalSeconds: number,
-): number {
-  let displayed = 0;
-  for (const segment of segments) {
-    if (originalSeconds < segment.startSeconds) return displayed;
-    if (originalSeconds <= segment.endSeconds)
-      return displayed + (originalSeconds - segment.startSeconds);
-    displayed += segment.endSeconds - segment.startSeconds;
-  }
-  return displayed;
+export interface TrackPosition {
+  segmentIndex: number;
+  originalSeconds: number;
 }
 
 export function displayToOriginalSeconds(
   segments: readonly KeepRange[],
   displaySeconds: number,
 ): number {
+  return locateDisplaySeconds(segments, displaySeconds)?.originalSeconds ?? 0;
+}
+
+/** Null for an empty track. Past the end, the end of the last segment. */
+export function locateDisplaySeconds(
+  segments: readonly KeepRange[],
+  displaySeconds: number,
+): TrackPosition | null {
   let displayed = 0;
-  for (const segment of segments) {
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    if (!segment) continue;
     const length = segment.endSeconds - segment.startSeconds;
-    if (displaySeconds <= displayed + length) {
-      return segment.startSeconds + (displaySeconds - displayed);
+    if (displaySeconds < displayed + length) {
+      return {
+        segmentIndex: index,
+        originalSeconds: segment.startSeconds + Math.max(0, displaySeconds - displayed),
+      };
     }
     displayed += length;
   }
-  const last = segments[segments.length - 1];
-  return last ? last.endSeconds : 0;
+  const lastIndex = segments.length - 1;
+  const last = segments[lastIndex];
+  return last ? { segmentIndex: lastIndex, originalSeconds: last.endSeconds } : null;
+}
+
+export function positionToDisplaySeconds(
+  segments: readonly KeepRange[],
+  position: TrackPosition,
+): number {
+  const segment = segments[position.segmentIndex];
+  if (!segment) return totalKeptSeconds(segments);
+  const inside = clamp(
+    position.originalSeconds - segment.startSeconds,
+    0,
+    segment.endSeconds - segment.startSeconds,
+  );
+  return totalKeptSeconds(segments.slice(0, position.segmentIndex)) + inside;
 }
 
 /**
- * If `originalSeconds` currently sits in a gap (a part already cut), the
- * original-time position of the next surviving segment — where playback
- * should jump to keep sounding like the edited track rather than the
- * original one. Null when it is already inside a kept segment.
+ * Where playback next has to leave the stretch of the file it is playing, and
+ * where in the file it carries on. `to` is null at the end of the track.
+ *
+ * A running loop ends inside a segment rather than at its edge, which is why a
+ * jump is not always "on to the next segment".
  */
-export function nextKeptStart(
+export interface PlaybackJump {
+  atOriginalSeconds: number;
+  to: TrackPosition | null;
+}
+
+export function nextJump(
   segments: readonly KeepRange[],
-  originalSeconds: number,
-): number | null {
-  for (const segment of segments) {
-    if (originalSeconds < segment.startSeconds) return segment.startSeconds;
-    if (originalSeconds <= segment.endSeconds) return null;
+  position: TrackPosition,
+  loop: KeepRange | null,
+): PlaybackJump | null {
+  const segment = segments[position.segmentIndex];
+  if (!segment) return null;
+
+  const segmentDisplayStart = totalKeptSeconds(segments.slice(0, position.segmentIndex));
+  const segmentDisplayEnd = segmentDisplayStart + (segment.endSeconds - segment.startSeconds);
+  const displayNow = positionToDisplaySeconds(segments, position);
+
+  if (loop && displayNow < loop.endSeconds && loop.endSeconds <= segmentDisplayEnd) {
+    return {
+      atOriginalSeconds: segment.startSeconds + (loop.endSeconds - segmentDisplayStart),
+      to: locateDisplaySeconds(segments, loop.startSeconds),
+    };
   }
-  return null;
+
+  const following = segments[position.segmentIndex + 1];
+  return {
+    atOriginalSeconds: segment.endSeconds,
+    to: following
+      ? { segmentIndex: position.segmentIndex + 1, originalSeconds: following.startSeconds }
+      : null,
+  };
+}
+
+export interface CutResult {
+  kept: KeepRange[];
+  /** What was cut out, in play order, ready to be pasted somewhere else. */
+  removed: KeepRange[];
 }
 
 /**
  * Removes a range given in display time from the current segments, splitting
- * or shrinking whichever segment(s) it falls across. This is what "Cut"
- * does: the selection the user dragged is a display-time range, but a
- * segment's own bounds — and what actually has to change — are in the
- * original file's time.
+ * whichever segments it starts and ends inside. The selection the user dragged
+ * is a display-time range, but what actually has to change is the segments'
+ * own bounds, in original time.
  */
 export function cutRange(
   segments: readonly KeepRange[],
   displayStart: number,
   displayEnd: number,
-): KeepRange[] {
-  if (displayEnd <= displayStart) return [...segments];
-  const cuts = toOriginalCuts(segments, displayStart, displayEnd);
-  return cuts.reduce<KeepRange[]>((current, cut) => removeInterval(current, cut), [...segments]);
+): CutResult {
+  if (displayEnd <= displayStart) return { kept: [...segments], removed: [] };
+  const atStart = splitAt(segments, displayStart);
+  const atEnd = splitAt(atStart.segments, displayEnd);
+  return {
+    kept: joinContinuing([
+      ...atEnd.segments.slice(0, atStart.index),
+      ...atEnd.segments.slice(atEnd.index),
+    ]),
+    removed: atEnd.segments.slice(atStart.index, atEnd.index),
+  };
 }
 
-function toOriginalCuts(
+/** Inserts `pasted` at a display time, pushing everything after it later by its length. */
+export function pasteAt(
   segments: readonly KeepRange[],
-  displayStart: number,
-  displayEnd: number,
+  displaySeconds: number,
+  pasted: readonly KeepRange[],
 ): KeepRange[] {
-  const cuts: KeepRange[] = [];
+  const split = splitAt(segments, displaySeconds);
+  return joinContinuing([
+    ...split.segments.slice(0, split.index),
+    ...pasted,
+    ...split.segments.slice(split.index),
+  ]);
+}
+
+/**
+ * Splits the segment `displaySeconds` falls inside, so that point becomes a
+ * boundary. `index` is the first segment starting at or after it.
+ */
+function splitAt(
+  segments: readonly KeepRange[],
+  displaySeconds: number,
+): { segments: KeepRange[]; index: number } {
+  const result: KeepRange[] = [];
   let displayed = 0;
+  let index: number | null = null;
+
   for (const segment of segments) {
     const length = segment.endSeconds - segment.startSeconds;
-    const segmentDisplayStart = displayed;
-    const segmentDisplayEnd = displayed + length;
-    const overlapStart = Math.max(displayStart, segmentDisplayStart);
-    const overlapEnd = Math.min(displayEnd, segmentDisplayEnd);
-    if (overlapEnd > overlapStart) {
-      cuts.push({
-        startSeconds: segment.startSeconds + (overlapStart - segmentDisplayStart),
-        endSeconds: segment.startSeconds + (overlapEnd - segmentDisplayStart),
-      });
+    const offset = displaySeconds - displayed;
+    if (index === null && offset < length - EDGE_SECONDS) {
+      if (offset > EDGE_SECONDS) {
+        const splitPoint = segment.startSeconds + offset;
+        result.push({ startSeconds: segment.startSeconds, endSeconds: splitPoint });
+        index = result.length;
+        result.push({ startSeconds: splitPoint, endSeconds: segment.endSeconds });
+      } else {
+        index = result.length;
+        result.push({ ...segment });
+      }
+    } else {
+      result.push({ ...segment });
     }
-    displayed = segmentDisplayEnd;
+    displayed += length;
   }
-  return cuts;
+  return { segments: result, index: index ?? result.length };
 }
 
-function removeInterval(segments: readonly KeepRange[], cut: KeepRange): KeepRange[] {
-  return segments.flatMap((segment) => {
-    const cutStart = Math.max(segment.startSeconds, cut.startSeconds);
-    const cutEnd = Math.min(segment.endSeconds, cut.endSeconds);
-    if (cutEnd <= cutStart) return [segment];
-
-    const pieces: KeepRange[] = [];
-    if (cutStart > segment.startSeconds) {
-      pieces.push({ startSeconds: segment.startSeconds, endSeconds: cutStart });
+/** Joins neighbours where one ends exactly where the next begins in the original file. */
+function joinContinuing(segments: readonly KeepRange[]): KeepRange[] {
+  const joined: KeepRange[] = [];
+  for (const segment of segments) {
+    const last = joined[joined.length - 1];
+    if (last && Math.abs(segment.startSeconds - last.endSeconds) < EDGE_SECONDS) {
+      last.endSeconds = segment.endSeconds;
+    } else {
+      joined.push({ ...segment });
     }
-    if (cutEnd < segment.endSeconds) {
-      pieces.push({ startSeconds: cutEnd, endSeconds: segment.endSeconds });
-    }
-    return pieces;
-  });
+  }
+  return joined;
 }
 
 function clamp(value: number, min: number, max: number): number {

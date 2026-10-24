@@ -472,6 +472,8 @@ expected to ever grow.
   underlying `<video>`/`<audio>` element straight to the next kept segment, so
   what plays back matches what Save would produce.
 - Zoom, snap-to-keyframe indicators, keyboard scrubbing
+- Cut keeps the removed part on a clipboard; Paste (V) inserts it at the
+  playhead and pushes everything after it later
 
 Export has two modes, exposed explicitly:
 
@@ -491,24 +493,24 @@ tested; the cut, the concat path, and cover-art carry-through are additionally
 driven against locally generated media in `trim-job.integration.test.ts`, no
 network needed):
 
-- `shared/trim.ts` holds the keep-range model: `sanitizeKeepRanges` sorts,
-  clamps to the file's duration, drops a slip of the pointer, and merges
-  touching or overlapping ranges, so the export step always sees a clean list
-  regardless of how the UI produced it.
+- `shared/trim.ts` holds the keep-range model: `sanitizeKeepRanges` clamps
+  to the file's duration, drops a slip of the pointer, and joins a range that
+  carries straight on from the one before it, so the export step always sees a
+  clean list regardless of how the UI produced it. It does not sort: the list
+  is the play order, since cut and paste can reorder or repeat parts.
 - The same file holds the display-time/original-time mapping the gap-closed
-  waveform and gap-skipping playback both depend on: `originalToDisplaySeconds`
-  and `displayToOriginalSeconds` convert between the edited track's own
-  timeline and the original file's, `nextKeptStart` says where to jump when
-  playback runs into a cut part, and `cutRange` removes a display-time
-  selection from the segments — splitting, shrinking, or dropping whichever
-  segment(s) it falls across, including a selection that spans a boundary an
-  earlier cut already made. All four are pure and unit tested directly; this
+  waveform and gap-skipping playback both depend on: `locateDisplaySeconds`
+  and `positionToDisplaySeconds` convert between the edited track's own
+  timeline and a position in the original file, `nextJump` says where
+  playback has to leave a stretch and where it carries on, `cutRange` removes
+  a display-time selection and hands back what it removed, and `pasteAt`
+  inserts it again. All are pure and unit tested directly; this
   is exactly the kind of interval arithmetic that is silently wrong rather
   than loudly wrong.
 - `main/media/trim-args.ts` builds the ffmpeg invocation for both modes. Fast
   mode is `-ss`/`-t` stream copy per range, joined by the concat demuxer when
-  there is more than one; precise mode is a single `trim`/`atrim` +
-  `concat` filter pass, re-encoded with a codec chosen per container
+  there is more than one; precise mode is a single `concat` filter pass over
+  one `-ss`/`-t` input per range, re-encoded with a codec chosen per container
   (`libmp3lame` for mp3, `pcm_s16le` for wav, `libvpx-vp9` for webm, and so
   on). Both exclude cover art by construction: the `0:V`/`0:a` stream
   specifiers used throughout never match an attached-picture stream.
@@ -558,6 +560,31 @@ dropped rather than queued, so `TrimPanel`'s `seek` now defers to a
 `timeupdate` handler ignores whatever position the element reports while
 `element.seeking` is still true, so a stale reading from mid-seek cannot
 clobber the optimistic UI update.
+
+Second round of real-use feedback, on video:
+
+- **Lag at every cut point during preview.** Two causes: `timeupdate` fires
+  about four times a second, so up to 250ms of the cut part played before the
+  jump, and the jump was a seek, which for video means decoding forward from a
+  keyframe. Playback is now `track-edit/segment-player.ts`: two elements on
+  the same file, the idle one parked (paused, already seeked) where the next
+  jump lands, swapped in at the jump; positions are watched every animation
+  frame. A plain seek is only the fallback when the parked element is not ready.
+- **Fast export failing with "longer than expected".** A stream copy can only
+  start video on a keyframe, so ffmpeg silently started each part at the
+  keyframe before `-ss`, up to a full keyframe interval early, and the extra
+  added up across parts. `main/media/keyframes.ts` now reads keyframe times
+  (packet flags only, no decoding) and the job moves each start back onto one
+  before cutting, so the expected length matches what is written. Covered by an
+  integration test on a 4s-keyframe-interval mp4 with three parts.
+- **Cut and paste.** Cut puts the removed part on a clipboard and Paste inserts
+  it at the playhead. Since parts can now be reordered or repeated, positions
+  are a segment index plus a time inside it (`TrackPosition`), never an
+  original time alone, and `cutRange` splits by display time instead of
+  removing an original-time interval (which would hit every copy of a repeated
+  part). Precise export opens each part as its own `-ss`/`-t` input instead
+  of `trim`-ing one input: with parts out of order, `trim` would buffer every
+  decoded frame of a later part until `concat` reached it.
 
 Still open:
 

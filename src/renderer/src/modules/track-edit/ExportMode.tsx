@@ -8,7 +8,7 @@ interface ExportModeProps {
 }
 
 const DESCRIPTIONS: Record<TrimExportMode, string> = {
-  fast: 'Copies the file without re-encoding. Quick, but a cut can land a moment off the exact point you asked for.',
+  fast: 'Copies the file without re-encoding. Quick, but on video each part starts at the keyframe before its cut point, so it can begin a moment early.',
   precise: 'Re-encodes to land exactly on the cut point. Slower.',
 };
 

@@ -169,26 +169,39 @@ export interface PreciseTrimRequest {
 }
 
 /**
- * Every keep-range, re-encoded and joined in a single pass via `trim`/`atrim`
- * plus the `concat` filter. One invocation regardless of how many ranges
- * there are, and exact to the frame — the cost `fast` mode's keyframe seek
- * avoids.
+ * Every keep-range, re-encoded and joined in a single pass by the `concat`
+ * filter, exact to the frame: the cost `fast` mode's keyframe seek avoids.
+ *
+ * Each range is its own input, opened with `-ss`/`-t`, rather than one input
+ * cut up with `trim` filters. Ranges can be in any order once a part has been
+ * pasted elsewhere, and `trim` on a single input would have to hold every
+ * decoded frame of a later part in memory until `concat` reached it. When
+ * re-encoding, an input `-ss` decodes from the keyframe before and drops
+ * frames up to the requested time, so it is still exact.
  */
 export function buildPreciseTrimArgs(request: PreciseTrimRequest): string[] {
   const { sourcePath, outputPath, ranges, hasAudio, hasVideo, ext } = request;
 
+  const inputs: string[] = [];
   const chains: string[] = [];
   const concatInputs: string[] = [];
   ranges.forEach((range, index) => {
-    const start = range.startSeconds.toFixed(3);
-    const end = range.endSeconds.toFixed(3);
+    const input = String(index);
+    inputs.push(
+      '-ss',
+      range.startSeconds.toFixed(3),
+      '-t',
+      (range.endSeconds - range.startSeconds).toFixed(3),
+      '-i',
+      sourcePath,
+    );
     if (hasVideo) {
-      chains.push(`[0:V:0]trim=start=${start}:end=${end},setpts=PTS-STARTPTS[v${String(index)}]`);
-      concatInputs.push(`[v${String(index)}]`);
+      chains.push(`[${input}:V:0]setpts=PTS-STARTPTS[v${input}]`);
+      concatInputs.push(`[v${input}]`);
     }
     if (hasAudio) {
-      chains.push(`[0:a:0]atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS[a${String(index)}]`);
-      concatInputs.push(`[a${String(index)}]`);
+      chains.push(`[${input}:a:0]asetpts=PTS-STARTPTS[a${input}]`);
+      concatInputs.push(`[a${input}]`);
     }
   });
 
@@ -201,8 +214,7 @@ export function buildPreciseTrimArgs(request: PreciseTrimRequest): string[] {
     '-hide_banner',
     '-nostdin',
     '-y',
-    '-i',
-    sourcePath,
+    ...inputs,
     '-filter_complex',
     chains.join(';'),
     ...(hasVideo ? ['-map', '[outv]', '-c:v', preciseVideoCodec(ext)] : []),

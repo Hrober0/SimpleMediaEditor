@@ -136,7 +136,11 @@ async function withCover(path: string, coverName: string): Promise<string> {
 }
 
 /** Video plus audio, tagged, for the video trim case. */
-async function makeMp4(name: string, durationSeconds: number): Promise<string> {
+async function makeMp4(
+  name: string,
+  durationSeconds: number,
+  keyframeIntervalFrames = 12,
+): Promise<string> {
   const path = join(workDirectory, name);
   await ffmpeg([
     '-hide_banner',
@@ -153,6 +157,8 @@ async function makeMp4(name: string, durationSeconds: number): Promise<string> {
     'title=Clip Title',
     '-c:v',
     'mpeg4',
+    '-g',
+    String(keyframeIntervalFrames),
     '-c:a',
     'aac',
     '-shortest',
@@ -266,6 +272,52 @@ describe('trimming an mp4', () => {
     expect(after.audio).not.toBeNull();
     expect(after.durationSeconds ?? 0).toBeCloseTo(3, 0);
     expect(after.tags.title).toBe('Clip Title');
+  });
+});
+
+describe('fast trimming an mp4 with keyframes far apart', () => {
+  // One keyframe every 4s (40 frames at 10fps): before starts were moved onto
+  // keyframes, each part here came out up to 4s longer than asked, and the
+  // export failed its own length check.
+  it('joins several parts, in the order given, and passes the length check', async () => {
+    const path = await makeMp4('sparse.mp4', 20, 40);
+
+    const job = await trim({
+      sourcePath: path,
+      destinationPath: path,
+      ranges: [
+        { startSeconds: 13, endSeconds: 15 },
+        { startSeconds: 5, endSeconds: 7 },
+        { startSeconds: 17, endSeconds: 19 },
+      ],
+      mode: 'fast',
+    });
+
+    expect(job.error).toBeNull();
+    expect(job.status).toBe('done');
+    const after = await probeFile(path, probeDeps);
+    expect(after.video).not.toBeNull();
+    expect(after.audio).not.toBeNull();
+    // Starts move back to 12, 4 and 16: 3 + 3 + 3.
+    expect(after.durationSeconds ?? 0).toBeCloseTo(9, 0);
+  });
+
+  it('lands on the exact length in precise mode with the parts out of order', async () => {
+    const path = await makeMp4('sparse-precise.mp4', 20, 40);
+
+    const job = await trim({
+      sourcePath: path,
+      destinationPath: path,
+      ranges: [
+        { startSeconds: 13, endSeconds: 15 },
+        { startSeconds: 5, endSeconds: 7 },
+      ],
+      mode: 'precise',
+    });
+
+    expect(job.error).toBeNull();
+    expect(job.status).toBe('done');
+    expect((await probeFile(path, probeDeps)).durationSeconds ?? 0).toBeCloseTo(4, 0);
   });
 });
 

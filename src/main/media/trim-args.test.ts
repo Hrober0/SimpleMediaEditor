@@ -111,13 +111,13 @@ describe('buildConcatArgs', () => {
 });
 
 describe('buildPreciseTrimArgs', () => {
-  it('builds one trim/atrim pair per range plus a single concat', () => {
+  it('opens each range as its own seeked input, joined in play order by one concat', () => {
     const args = buildPreciseTrimArgs({
       sourcePath: 'in.mp3',
       outputPath: 'out.mp3',
       ranges: [
-        { startSeconds: 0, endSeconds: 5 },
         { startSeconds: 10, endSeconds: 12 },
+        { startSeconds: 0, endSeconds: 5 },
       ],
       hasAudio: true,
       hasVideo: false,
@@ -125,10 +125,23 @@ describe('buildPreciseTrimArgs', () => {
     });
 
     const filterIndex = args.indexOf('-filter_complex');
-    const filter = args[filterIndex + 1];
-    expect(filter).toBe(
-      '[0:a:0]atrim=start=0.000:end=5.000,asetpts=PTS-STARTPTS[a0];' +
-        '[0:a:0]atrim=start=10.000:end=12.000,asetpts=PTS-STARTPTS[a1];' +
+    expect(args.slice(3, filterIndex)).toEqual([
+      '-ss',
+      '10.000',
+      '-t',
+      '2.000',
+      '-i',
+      'in.mp3',
+      '-ss',
+      '0.000',
+      '-t',
+      '5.000',
+      '-i',
+      'in.mp3',
+    ]);
+    expect(args[filterIndex + 1]).toBe(
+      '[0:a:0]asetpts=PTS-STARTPTS[a0];' +
+        '[1:a:0]asetpts=PTS-STARTPTS[a1];' +
         '[a0][a1]concat=n=2:v=0:a=1[outa]',
     );
     expect(args).toEqual(expect.arrayContaining(['-map', '[outa]', '-c:a', 'libmp3lame']));

@@ -1,18 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type RefCallback } from 'react';
-import {
-  displayToOriginalSeconds,
-  nextKeptStart,
-  originalToDisplaySeconds,
-  type KeepRange,
-} from '@shared/trim';
+import { useEffect, useState, type RefCallback } from 'react';
+import type { KeepRange } from '@shared/trim';
+import { SegmentPlayer, type ElementIndex } from './segment-player';
 import type { WaveformSelection } from './Waveform';
 
-/** How close to the end of the last segment counts as "there". */
-const END_EPSILON_SECONDS = 0.05;
-
 interface PlaybackOptions {
-  /** Null while no file is open. Listeners re-attach when a different one is. */
-  sourcePath: string | null;
   segments: readonly KeepRange[];
   /** The part to play over and over, or null to play straight through. */
   loop: WaveformSelection | null;
@@ -22,7 +13,10 @@ export interface Playback {
   /** In display time: the edited track's own timeline, not the original file's. */
   currentTime: number;
   playing: boolean;
-  setMediaElement: RefCallback<HTMLMediaElement>;
+  /** Both elements hold the same file; see `SegmentPlayer` for why there are two. */
+  elementRefs: readonly [RefCallback<HTMLMediaElement>, RefCallback<HTMLMediaElement>];
+  /** Which of the two is playing, and so which one should be seen. */
+  activeElement: ElementIndex;
   togglePlay: () => void;
   seek: (displaySeconds: number) => void;
   /** Forgets where the playhead was, for when another file is opened. */
@@ -30,92 +24,43 @@ export interface Playback {
 }
 
 /**
- * Plays the edited track through an element that still holds the original file.
- *
- * Every position crossing that boundary is translated, and a cut part is
- * skipped rather than heard: this is what makes the preview match the track
- * being edited instead of the file on disk.
+ * Plays the edited track, so the preview sounds and looks like the track being
+ * edited rather than the file on disk. The work is in `SegmentPlayer`; this
+ * only connects it to React state.
  */
-export function usePlayback({ sourcePath, segments, loop }: PlaybackOptions): Playback {
+export function usePlayback({ segments, loop }: PlaybackOptions): Playback {
   const [currentTime, setCurrentTime] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [activeElement, setActiveElement] = useState<ElementIndex>(0);
 
-  const elementRef = useRef<HTMLMediaElement | null>(null);
-  const setMediaElement = useCallback((element: HTMLMediaElement | null): void => {
-    elementRef.current = element;
-  }, []);
+  const [player] = useState(
+    () =>
+      new SegmentPlayer({
+        timeChanged: setCurrentTime,
+        playingChanged: setPlaying,
+        activeElementChanged: setActiveElement,
+      }),
+  );
+  const [elementRefs] = useState(
+    () =>
+      [
+        (element: HTMLMediaElement | null) => player.setElement(0, element),
+        (element: HTMLMediaElement | null) => player.setElement(1, element),
+      ] as const,
+  );
 
-  useEffect(() => {
-    const element = elementRef.current;
-    if (!element) return;
+  // An edit moves what sits at the playhead, so the player re-reads where it is.
+  useEffect(() => player.setSegments(segments), [player, segments]);
+  useEffect(() => player.setLoop(loop), [player, loop]);
+  useEffect(() => () => player.reset(), [player]);
 
-    const onTime = (): void => {
-      // A seek just issued has not resolved yet: whatever position is reported
-      // right now is stale, and applying it would snap the playhead back to
-      // wherever it was before the seek.
-      if (element.seeking) return;
-
-      // Nothing to map a position against: leave the displayed time alone
-      // rather than let the "no segments" case fall through as zero.
-      if (segments.length === 0) return;
-
-      if (loop) {
-        const loopEndOriginal = displayToOriginalSeconds(segments, loop.endSeconds);
-        if (element.currentTime >= loopEndOriginal - END_EPSILON_SECONDS) {
-          element.currentTime = displayToOriginalSeconds(segments, loop.startSeconds);
-          return;
-        }
-      }
-
-      const skipTo = nextKeptStart(segments, element.currentTime);
-      if (skipTo !== null) {
-        element.currentTime = skipTo;
-        return;
-      }
-
-      const last = segments[segments.length - 1];
-      if (last && element.currentTime > last.endSeconds + END_EPSILON_SECONDS) {
-        element.pause();
-        element.currentTime = last.endSeconds;
-        return;
-      }
-
-      setCurrentTime(originalToDisplaySeconds(segments, element.currentTime));
-    };
-    const onPlay = (): void => setPlaying(true);
-    const onPause = (): void => setPlaying(false);
-
-    element.addEventListener('timeupdate', onTime);
-    element.addEventListener('play', onPlay);
-    element.addEventListener('pause', onPause);
-    return () => {
-      element.removeEventListener('timeupdate', onTime);
-      element.removeEventListener('play', onPlay);
-      element.removeEventListener('pause', onPause);
-    };
-  }, [sourcePath, segments, loop]);
-
-  const togglePlay = (): void => {
-    const element = elementRef.current;
-    if (!element) return;
-    if (element.paused) void element.play();
-    else element.pause();
+  return {
+    currentTime,
+    playing,
+    elementRefs,
+    activeElement,
+    togglePlay: () => player.togglePlay(),
+    seek: (displaySeconds) => player.seek(displaySeconds),
+    reset: () => player.reset(),
   };
-
-  const seek = (displaySeconds: number): void => {
-    const element = elementRef.current;
-    // Setting currentTime before metadata has loaded is not lost: the spec
-    // has the element remember it as the pending initial playback position
-    // and apply it once the resource is ready, so nothing extra is needed
-    // here for that case.
-    if (element) element.currentTime = displayToOriginalSeconds(segments, displaySeconds);
-    setCurrentTime(displaySeconds);
-  };
-
-  const reset = (): void => {
-    setCurrentTime(0);
-    setPlaying(false);
-  };
-
-  return { currentTime, playing, setMediaElement, togglePlay, seek, reset };
 }

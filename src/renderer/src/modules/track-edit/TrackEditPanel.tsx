@@ -4,7 +4,13 @@ import { formatDuration } from '@shared/format';
 import { formatForExtension } from '@shared/media-types';
 import type { OpenedMedia } from '@shared/metadata';
 import type { ErrorInfo } from '@shared/result';
-import { cutRange, totalKeptSeconds, type KeepRange, type TrimExportMode } from '@shared/trim';
+import {
+  cutRange,
+  pasteAt,
+  totalKeptSeconds,
+  type KeepRange,
+  type TrimExportMode,
+} from '@shared/trim';
 import { api } from '../../api';
 import { ChangeMediaButton } from '../../components/ChangeMediaButton';
 import { FailureAlert } from '../../components/FailureAlert';
@@ -12,6 +18,7 @@ import { MediaFileInput } from '../../components/MediaFileInput';
 import { MediaSummary } from '../../components/MediaSummary';
 import { PanelActions } from '../../components/PanelActions';
 import { ExportMode } from './ExportMode';
+import { PasteAction } from './PasteAction';
 import { PlaybackControls } from './PlaybackControls';
 import { Player } from './Player';
 import { SelectionActions } from './SelectionActions';
@@ -30,11 +37,16 @@ import { ZoomControls } from './ZoomControls';
  * changes until "Cut" is pressed, which is what actually removes it from the
  * segments. Save writes out whatever the segments currently are, whether or not
  * a selection happens to be sitting there uncommitted.
+ *
+ * A cut part is kept on a clipboard, and pasting puts it back in at the
+ * playhead. The clipboard holds parts of this file only, so opening another
+ * file empties it.
  */
 export function TrackEditPanel(): ReactNode {
   const [media, setMedia] = useState<OpenedMedia | null>(null);
   const [segments, setSegments] = useState<KeepRange[]>([]);
   const [initialSegments, setInitialSegments] = useState<KeepRange[]>([]);
+  const [clipboard, setClipboard] = useState<KeepRange[] | null>(null);
   const [selection, setSelection] = useState<WaveformSelection | null>(null);
   const [viewRange, setViewRange] = useState<WaveformViewRange | null>(null);
   const [loopEnabled, setLoopEnabled] = useState(false);
@@ -47,7 +59,7 @@ export function TrackEditPanel(): ReactNode {
   // Null unless a loop is actually running, so dragging out a selection does
   // not tear down and rebuild the playback listeners on every pointer move.
   const loop = loopEnabled ? selection : null;
-  const playback = usePlayback({ sourcePath: media?.info.path ?? null, segments, loop });
+  const playback = usePlayback({ segments, loop });
 
   const open = (path: string): void => {
     setOpening(true);
@@ -65,6 +77,7 @@ export function TrackEditPanel(): ReactNode {
         setMedia(result.value);
         playback.reset();
         setSelection(null);
+        setClipboard(null);
         setViewRange(null);
         setLoopEnabled(false);
 
@@ -86,20 +99,38 @@ export function TrackEditPanel(): ReactNode {
   const canEdit = media && format;
   const canSave = changed && segments.length > 0;
 
-  const cut = (displayStart: number, displayEnd: number): void => {
-    setSegments((current) => cutRange(current, displayStart, displayEnd));
+  /** Takes the selection out of the track, returning what was taken out. */
+  const removeSelection = (): KeepRange[] => {
+    if (!selection) return [];
+    const { kept, removed } = cutRange(segments, selection.startSeconds, selection.endSeconds);
+    setSegments(kept);
+    setSelection(null);
+    setLoopEnabled(false);
     setViewRange(null);
-    // The cut just moved everything after it: land the playhead where the cut
-    // now starts rather than leaving it pointing at a time that no longer means
-    // what it did a moment ago.
-    playback.seek(displayStart);
+    // The removal just moved everything after it: land the playhead where the
+    // removed part started rather than leaving it pointing at a time that no
+    // longer means what it did a moment ago.
+    playback.seek(selection.startSeconds);
+    return removed;
   };
 
   const cutSelection = (): void => {
-    if (!selection) return;
-    cut(selection.startSeconds, selection.endSeconds);
+    const removed = removeSelection();
+    if (removed.length > 0) setClipboard(removed);
+  };
+
+  // Unlike a cut, the clipboard keeps whatever was cut before.
+  const deleteSelection = (): void => {
+    removeSelection();
+  };
+
+  // The playhead stays where it was, which is now the start of the pasted part.
+  const paste = (): void => {
+    if (!clipboard) return;
+    setSegments(pasteAt(segments, playback.currentTime, clipboard));
     setSelection(null);
     setLoopEnabled(false);
+    setViewRange(null);
   };
 
   const deselect = (): void => {
@@ -128,6 +159,8 @@ export function TrackEditPanel(): ReactNode {
     seek: playback.seek,
     deselect,
     cutSelection,
+    deleteSelection,
+    paste,
     toggleLoop,
     zoomToSelection,
     zoomOut,
@@ -172,7 +205,11 @@ export function TrackEditPanel(): ReactNode {
 
           <Divider label="Preview" labelPosition="left" />
 
-          <Player info={media.info} elementRef={playback.setMediaElement} />
+          <Player
+            info={media.info}
+            elementRefs={playback.elementRefs}
+            activeElement={playback.activeElement}
+          />
 
           <Group gap="sm" wrap="nowrap">
             <PlaybackControls
@@ -211,13 +248,15 @@ export function TrackEditPanel(): ReactNode {
             <WaveformNotice loading={waveform.loading} />
           )}
 
-          <Box mih={40}>
+          <Group mih={40} gap="md" align="flex-start">
             <SelectionActions
               selection={selection}
               deselect={deselect}
               cutSelection={cutSelection}
+              deleteSelection={deleteSelection}
             />
-          </Box>
+            <PasteAction clipboard={clipboard} paste={paste} />
+          </Group>
 
           <Divider label="Export" labelPosition="left" />
 

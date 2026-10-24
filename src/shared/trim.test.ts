@@ -2,14 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   cutRange,
   displayToOriginalSeconds,
-  nextKeptStart,
-  originalToDisplaySeconds,
+  locateDisplaySeconds,
+  nextJump,
+  pasteAt,
+  positionToDisplaySeconds,
   sanitizeKeepRanges,
   totalKeptSeconds,
 } from './trim';
 
 describe('sanitizeKeepRanges', () => {
-  it('sorts ranges given out of order', () => {
+  it('keeps ranges in the order given, since that is the play order', () => {
     expect(
       sanitizeKeepRanges(
         [
@@ -19,8 +21,8 @@ describe('sanitizeKeepRanges', () => {
         30,
       ),
     ).toEqual([
-      { startSeconds: 0, endSeconds: 5 },
       { startSeconds: 10, endSeconds: 20 },
+      { startSeconds: 0, endSeconds: 5 },
     ]);
   });
 
@@ -40,19 +42,7 @@ describe('sanitizeKeepRanges', () => {
     expect(sanitizeKeepRanges([{ startSeconds: 5, endSeconds: 5.001 }], 30)).toEqual([]);
   });
 
-  it('merges two ranges that overlap', () => {
-    expect(
-      sanitizeKeepRanges(
-        [
-          { startSeconds: 0, endSeconds: 10 },
-          { startSeconds: 5, endSeconds: 15 },
-        ],
-        30,
-      ),
-    ).toEqual([{ startSeconds: 0, endSeconds: 15 }]);
-  });
-
-  it('merges two ranges that only touch, so no zero-length gap survives', () => {
+  it('joins a range that carries straight on from the one before it', () => {
     expect(
       sanitizeKeepRanges(
         [
@@ -79,6 +69,15 @@ describe('sanitizeKeepRanges', () => {
     ]);
   });
 
+  it('keeps a part that was pasted twice', () => {
+    const part = { startSeconds: 5, endSeconds: 10 };
+    expect(sanitizeKeepRanges([part, { startSeconds: 20, endSeconds: 25 }, part], 30)).toEqual([
+      part,
+      { startSeconds: 20, endSeconds: 25 },
+      part,
+    ]);
+  });
+
   it('returns nothing for an empty input', () => {
     expect(sanitizeKeepRanges([], 30)).toEqual([]);
   });
@@ -99,79 +98,107 @@ describe('totalKeptSeconds', () => {
   });
 });
 
-describe('originalToDisplaySeconds / displayToOriginalSeconds', () => {
-  // Original 0-10 kept, 10-20 cut, 20-30 kept: displayed as one 0-20 track.
-  const segments = [
-    { startSeconds: 0, endSeconds: 10 },
+describe('locateDisplaySeconds / positionToDisplaySeconds', () => {
+  // Original 20-30 plays first, then original 0-10: displayed as one 0-20 track.
+  const reordered = [
     { startSeconds: 20, endSeconds: 30 },
+    { startSeconds: 0, endSeconds: 10 },
   ];
 
-  it('maps a point inside the first segment to itself', () => {
-    expect(originalToDisplaySeconds(segments, 5)).toBe(5);
+  it('finds the segment and the original time for a display time', () => {
+    expect(locateDisplaySeconds(reordered, 5)).toEqual({ segmentIndex: 0, originalSeconds: 25 });
+    expect(locateDisplaySeconds(reordered, 15)).toEqual({ segmentIndex: 1, originalSeconds: 5 });
   });
 
-  it('maps a point inside the second segment past the closed gap', () => {
-    expect(originalToDisplaySeconds(segments, 25)).toBe(15);
+  it('puts a point exactly on a boundary at the start of the next segment', () => {
+    expect(locateDisplaySeconds(reordered, 10)).toEqual({ segmentIndex: 1, originalSeconds: 0 });
   });
 
-  it('maps a point inside the cut gap to the end of the segment before it', () => {
-    expect(originalToDisplaySeconds(segments, 15)).toBe(10);
+  it('clamps past the end to the end of the last segment', () => {
+    expect(locateDisplaySeconds(reordered, 999)).toEqual({ segmentIndex: 1, originalSeconds: 10 });
   });
 
-  it('is the inverse of displayToOriginalSeconds for a kept point', () => {
-    expect(displayToOriginalSeconds(segments, 15)).toBe(25);
-    expect(displayToOriginalSeconds(segments, 5)).toBe(5);
-  });
-
-  it('clamps a display time past the end of the track to the last segment’s end', () => {
-    expect(displayToOriginalSeconds(segments, 999)).toBe(30);
-  });
-
-  it('treats no segments as an empty track', () => {
-    expect(originalToDisplaySeconds([], 5)).toBe(0);
+  it('is null for an empty track', () => {
+    expect(locateDisplaySeconds([], 5)).toBeNull();
     expect(displayToOriginalSeconds([], 5)).toBe(0);
+  });
+
+  it('maps a position back to the display time it came from', () => {
+    expect(positionToDisplaySeconds(reordered, { segmentIndex: 1, originalSeconds: 5 })).toBe(15);
+    expect(positionToDisplaySeconds(reordered, { segmentIndex: 0, originalSeconds: 25 })).toBe(5);
+  });
+
+  it('tells two copies of the same part apart by segment', () => {
+    const twice = [
+      { startSeconds: 0, endSeconds: 10 },
+      { startSeconds: 0, endSeconds: 10 },
+    ];
+    expect(positionToDisplaySeconds(twice, { segmentIndex: 0, originalSeconds: 4 })).toBe(4);
+    expect(positionToDisplaySeconds(twice, { segmentIndex: 1, originalSeconds: 4 })).toBe(14);
   });
 });
 
-describe('nextKeptStart', () => {
+describe('nextJump', () => {
   const segments = [
     { startSeconds: 0, endSeconds: 10 },
     { startSeconds: 20, endSeconds: 30 },
   ];
 
-  it('is null inside a kept segment', () => {
-    expect(nextKeptStart(segments, 5)).toBeNull();
+  it('leaves at the end of the segment for the start of the next one', () => {
+    expect(nextJump(segments, { segmentIndex: 0, originalSeconds: 5 }, null)).toEqual({
+      atOriginalSeconds: 10,
+      to: { segmentIndex: 1, originalSeconds: 20 },
+    });
   });
 
-  it('is the next segment’s start when playback is in a cut gap', () => {
-    expect(nextKeptStart(segments, 15)).toBe(20);
+  it('stops at the end of the last segment', () => {
+    expect(nextJump(segments, { segmentIndex: 1, originalSeconds: 25 }, null)).toEqual({
+      atOriginalSeconds: 30,
+      to: null,
+    });
   });
 
-  it('is null once nothing kept remains after this point', () => {
-    expect(nextKeptStart(segments, 35)).toBeNull();
+  it('goes back to the loop start when the loop ends inside this segment', () => {
+    // Display 12-15 is original 22-25.
+    const loop = { startSeconds: 12, endSeconds: 15 };
+    expect(nextJump(segments, { segmentIndex: 1, originalSeconds: 23 }, loop)).toEqual({
+      atOriginalSeconds: 25,
+      to: { segmentIndex: 1, originalSeconds: 22 },
+    });
+  });
+
+  it('crosses into the next segment first when the loop ends further on', () => {
+    const loop = { startSeconds: 5, endSeconds: 15 };
+    expect(nextJump(segments, { segmentIndex: 0, originalSeconds: 6 }, loop)).toEqual({
+      atOriginalSeconds: 10,
+      to: { segmentIndex: 1, originalSeconds: 20 },
+    });
   });
 });
 
 describe('cutRange', () => {
   const wholeFile = [{ startSeconds: 0, endSeconds: 30 }];
 
-  it('splits a single segment when the cut is interior', () => {
-    expect(cutRange(wholeFile, 10, 20)).toEqual([
-      { startSeconds: 0, endSeconds: 10 },
-      { startSeconds: 20, endSeconds: 30 },
-    ]);
+  it('splits a single segment when the cut is interior, and hands back what was cut', () => {
+    expect(cutRange(wholeFile, 10, 20)).toEqual({
+      kept: [
+        { startSeconds: 0, endSeconds: 10 },
+        { startSeconds: 20, endSeconds: 30 },
+      ],
+      removed: [{ startSeconds: 10, endSeconds: 20 }],
+    });
   });
 
   it('shrinks the segment when the cut touches the start', () => {
-    expect(cutRange(wholeFile, 0, 10)).toEqual([{ startSeconds: 10, endSeconds: 30 }]);
+    expect(cutRange(wholeFile, 0, 10).kept).toEqual([{ startSeconds: 10, endSeconds: 30 }]);
   });
 
   it('shrinks the segment when the cut touches the end', () => {
-    expect(cutRange(wholeFile, 20, 30)).toEqual([{ startSeconds: 0, endSeconds: 20 }]);
+    expect(cutRange(wholeFile, 20, 30).kept).toEqual([{ startSeconds: 0, endSeconds: 20 }]);
   });
 
   it('removes the segment entirely when the cut covers all of it', () => {
-    expect(cutRange(wholeFile, 0, 30)).toEqual([]);
+    expect(cutRange(wholeFile, 0, 30)).toEqual({ kept: [], removed: wholeFile });
   });
 
   it('cuts across a display range that spans two segments left by an earlier cut', () => {
@@ -181,25 +208,87 @@ describe('cutRange', () => {
       { startSeconds: 0, endSeconds: 10 },
       { startSeconds: 20, endSeconds: 30 },
     ];
-    expect(cutRange(alreadyCut, 5, 17)).toEqual([
-      { startSeconds: 0, endSeconds: 5 },
-      { startSeconds: 27, endSeconds: 30 },
+    expect(cutRange(alreadyCut, 5, 17)).toEqual({
+      kept: [
+        { startSeconds: 0, endSeconds: 5 },
+        { startSeconds: 27, endSeconds: 30 },
+      ],
+      removed: [
+        { startSeconds: 5, endSeconds: 10 },
+        { startSeconds: 20, endSeconds: 27 },
+      ],
+    });
+  });
+
+  it('cuts only the copy that is selected when a part appears twice', () => {
+    const twice = [
+      { startSeconds: 0, endSeconds: 10 },
+      { startSeconds: 0, endSeconds: 10 },
+    ];
+    expect(cutRange(twice, 12, 14).kept).toEqual([
+      { startSeconds: 0, endSeconds: 10 },
+      { startSeconds: 0, endSeconds: 2 },
+      { startSeconds: 4, endSeconds: 10 },
     ]);
   });
 
   it('does nothing for a zero-length or backwards range', () => {
-    expect(cutRange(wholeFile, 10, 10)).toEqual(wholeFile);
-    expect(cutRange(wholeFile, 20, 10)).toEqual(wholeFile);
+    expect(cutRange(wholeFile, 10, 10)).toEqual({ kept: wholeFile, removed: [] });
+    expect(cutRange(wholeFile, 20, 10)).toEqual({ kept: wholeFile, removed: [] });
   });
 
   it('leaves the cut range unreachable from any display position afterwards', () => {
-    const after = cutRange(wholeFile, 10, 20);
-    // Every display second in the shortened track maps to original time
-    // outside the strict interior of the cut range — that part is simply not
-    // on the track any more.
-    for (let display = 0; display < totalKeptSeconds(after); display += 1) {
-      const original = displayToOriginalSeconds(after, display);
+    const { kept } = cutRange(wholeFile, 10, 20);
+    for (let display = 0; display < totalKeptSeconds(kept); display += 1) {
+      const original = displayToOriginalSeconds(kept, display);
       expect(original <= 10 || original >= 20).toBe(true);
     }
+  });
+});
+
+describe('pasteAt', () => {
+  const pasted = [{ startSeconds: 10, endSeconds: 20 }];
+
+  it('inserts inside a segment and pushes the rest of it later', () => {
+    const kept = [
+      { startSeconds: 0, endSeconds: 10 },
+      { startSeconds: 20, endSeconds: 30 },
+    ];
+    expect(pasteAt(kept, 15, pasted)).toEqual([
+      { startSeconds: 0, endSeconds: 10 },
+      { startSeconds: 20, endSeconds: 25 },
+      { startSeconds: 10, endSeconds: 20 },
+      { startSeconds: 25, endSeconds: 30 },
+    ]);
+  });
+
+  it('inserts at the very start', () => {
+    expect(pasteAt([{ startSeconds: 0, endSeconds: 5 }], 0, pasted)).toEqual([
+      { startSeconds: 10, endSeconds: 20 },
+      { startSeconds: 0, endSeconds: 5 },
+    ]);
+  });
+
+  it('joins the pasted part to a neighbour it carries straight on into', () => {
+    expect(pasteAt([{ startSeconds: 20, endSeconds: 30 }], 0, pasted)).toEqual([
+      { startSeconds: 10, endSeconds: 30 },
+    ]);
+  });
+
+  it('appends past the end', () => {
+    expect(pasteAt([{ startSeconds: 0, endSeconds: 5 }], 999, pasted)).toEqual([
+      { startSeconds: 0, endSeconds: 5 },
+      { startSeconds: 10, endSeconds: 20 },
+    ]);
+  });
+
+  it('puts a part cut out back together when pasted where it came from', () => {
+    const { kept, removed } = cutRange([{ startSeconds: 0, endSeconds: 30 }], 10, 20);
+    expect(pasteAt(kept, 10, removed)).toEqual([{ startSeconds: 0, endSeconds: 30 }]);
+  });
+
+  it('lengthens the track by exactly the pasted length', () => {
+    const kept = [{ startSeconds: 0, endSeconds: 30 }];
+    expect(totalKeptSeconds(pasteAt(kept, 7, pasted))).toBe(40);
   });
 });
