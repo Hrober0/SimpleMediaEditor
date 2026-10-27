@@ -5,7 +5,6 @@ import {
   buildConcatListContent,
   buildFastSegmentArgs,
   buildPreciseTrimArgs,
-  preciseAudioCodec,
   preciseVideoCodec,
 } from './trim-args';
 
@@ -77,18 +76,30 @@ describe('buildFastSegmentArgs', () => {
 });
 
 describe('buildConcatListContent', () => {
-  it('lists each segment on its own quoted line', () => {
-    expect(buildConcatListContent(['/tmp/a.mp3', '/tmp/b.mp3'])).toBe(
-      "file '/tmp/a.mp3'\nfile '/tmp/b.mp3'\n",
-    );
+  const part = (path: string): { path: string; durationSeconds: number } => ({
+    path,
+    durationSeconds: 2,
+  });
+
+  it('lists each segment with the point it should end at', () => {
+    expect(
+      buildConcatListContent([
+        { path: '/tmp/a.mp3', durationSeconds: 2 },
+        { path: '/tmp/b.mp3', durationSeconds: 1.5 },
+      ]),
+    ).toBe("file '/tmp/a.mp3'\noutpoint 2.000000\nfile '/tmp/b.mp3'\noutpoint 1.500000\n");
   });
 
   it('escapes a single quote in a path', () => {
-    expect(buildConcatListContent(["/tmp/it's mine.mp3"])).toBe("file '/tmp/it'\\''s mine.mp3'\n");
+    expect(buildConcatListContent([part("/tmp/it's mine.mp3")])).toContain(
+      "file '/tmp/it'\\''s mine.mp3'\n",
+    );
   });
 
   it('escapes a backslash in a Windows path', () => {
-    expect(buildConcatListContent(['C:\\Users\\a.mp3'])).toBe("file 'C:\\\\Users\\\\a.mp3'\n");
+    expect(buildConcatListContent([part('C:\\Users\\a.mp3')])).toContain(
+      "file 'C:\\\\Users\\\\a.mp3'\n",
+    );
   });
 });
 
@@ -122,6 +133,7 @@ describe('buildPreciseTrimArgs', () => {
       hasAudio: true,
       hasVideo: false,
       ext: 'mp3',
+      sourceAudio: null,
     });
 
     const filterIndex = args.indexOf('-filter_complex');
@@ -156,6 +168,7 @@ describe('buildPreciseTrimArgs', () => {
       hasAudio: true,
       hasVideo: true,
       ext: 'mp4',
+      sourceAudio: null,
     });
 
     expect(args).toEqual(
@@ -180,20 +193,39 @@ describe('buildPreciseTrimArgs', () => {
       hasAudio: true,
       hasVideo: false,
       ext: 'mp3',
+      sourceAudio: null,
     });
     expect(args).toEqual(expect.arrayContaining(['-map_metadata', '0']));
   });
+
+  it('keeps the bit depth of a 24-bit WAV instead of cutting it to 16', () => {
+    const args = buildPreciseTrimArgs({
+      sourcePath: 'in.wav',
+      outputPath: 'out.wav',
+      ranges: [{ startSeconds: 0, endSeconds: 1 }],
+      hasAudio: true,
+      hasVideo: false,
+      ext: 'wav',
+      sourceAudio: {
+        codec: 'pcm_s24le',
+        width: null,
+        height: null,
+        channels: 2,
+        sampleRate: 48_000,
+        bitrate: 2_304_000,
+        sampleFormat: 's32',
+      },
+    });
+    expect(args).toEqual(expect.arrayContaining(['-c:a', 'pcm_s24le']));
+  });
 });
 
-describe('preciseAudioCodec / preciseVideoCodec', () => {
+describe('preciseVideoCodec', () => {
   it('picks a codec the container can actually hold', () => {
-    expect(preciseAudioCodec('wav')).toBe('pcm_s16le');
-    expect(preciseAudioCodec('flac')).toBe('flac');
     expect(preciseVideoCodec('webm')).toBe('libvpx-vp9');
   });
 
   it('falls back to a sane default for an unlisted extension', () => {
-    expect(preciseAudioCodec('unknown')).toBe('aac');
     expect(preciseVideoCodec('unknown')).toBe('libx264');
   });
 });

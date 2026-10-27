@@ -27,7 +27,7 @@ import type {
   IpcResponse,
 } from '@shared/ipc-contract';
 import { SUPPORTED_FORMATS, formatForExtension } from '@shared/media-types';
-import type { OpenedMedia } from '@shared/metadata';
+import { sanitizeTagValue, type OpenedMedia } from '@shared/metadata';
 import { err, ok, type Result } from '@shared/result';
 import type { BinaryResolver } from './binaries';
 import { AppFailure, toErrorInfo } from './errors';
@@ -40,6 +40,8 @@ import {
   prepareCoverFromImage,
   type CoverDeps,
 } from './media/cover-art';
+import { createNormalizeJob } from './media/normalize-job';
+import { validateNormalizeRequest } from './media/normalize-request';
 import { probeFile } from './media/probe';
 import { validateSaveTagsRequest } from './media/save-request';
 import { createTagWriteJob } from './media/tag-job';
@@ -114,6 +116,15 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       filters: mediaFileFilters(),
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+
+  handle('dialog:pickMediaFiles', async (_request, event) => {
+    const result = await dialog.showOpenDialog(windowFrom(event), {
+      title: 'Choose media files',
+      properties: ['openFile', 'multiSelections'],
+      filters: mediaFileFilters(),
+    });
+    return result.canceled ? [] : result.filePaths;
   });
 
   handle('dialog:pickImage', async (_request, event) => {
@@ -237,6 +248,23 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       const validated = validateTrimRequest(request);
       const job = queue.enqueue(createTrimJob(validated, coverDeps()));
       return ok({ jobId: job.id });
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+  handle('media:normalize', (request) => {
+    try {
+      const tasks = validateNormalizeRequest(request);
+      const jobDeps = {
+        ffmpegPath: binaries.require('ffmpeg'),
+        ffprobePath: binaries.require('ffprobe'),
+      };
+      const jobIdsByPath: Record<string, string> = {};
+      for (const task of tasks) {
+        jobIdsByPath[task.sourcePath] = queue.enqueue(createNormalizeJob(task, jobDeps)).id;
+      }
+      return ok({ jobIdsByPath });
     } catch (error) {
       return failure(error);
     }
@@ -371,6 +399,11 @@ function validateDownloadRequest(
       // Sanitized here rather than trusted from the renderer: this becomes a
       // filename on disk, and the same sanitizer serves every such path.
       filename: item.filename?.trim() ? sanitizeFilename(item.filename) : null,
+      // A tag value, not a path: only control characters and length are limited.
+      embeddedTitle:
+        typeof item.embeddedTitle === 'string'
+          ? sanitizeTagValue(item.embeddedTitle, false) || null
+          : null,
     }));
 
   if (items.length === 0) throw new AppFailure('No downloadable URL was provided.');

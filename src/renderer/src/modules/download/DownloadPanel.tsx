@@ -2,7 +2,7 @@ import { useCallback, useRef, useState, type ClipboardEvent, type ReactNode } fr
 import { Alert, Button, Divider, Group, Stack, Text, TextInput } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconAlertTriangle } from '@tabler/icons-react';
-import { downloadTargetById, type UrlInspection } from '@shared/download';
+import type { UrlInspection } from '@shared/download';
 import { sanitizeFilename, stripKnownExtension } from '@shared/filenames';
 import type { ErrorInfo } from '@shared/result';
 import { api } from '../../api';
@@ -14,6 +14,7 @@ import { useNavigation } from '../../state/NavigationContext';
 import { useSettings } from '../../state/SettingsContext';
 import { META_EDITOR } from '../types';
 import { DownloadOptionsForm } from './DownloadOptionsForm';
+import { SaveAsField } from './SaveAsField';
 import { SourcePreview } from './SourcePreview';
 
 /**
@@ -30,6 +31,9 @@ export function DownloadPanel(): ReactNode {
   const [inspection, setInspection] = useState<UrlInspection | null>(null);
   const [selectedIds, setSelectedIds] = useState<readonly string[]>([]);
   const [filename, setFilename] = useState('');
+  // The name prefilled from the video's title, so a rename can be told apart
+  // from accepting the suggestion.
+  const [suggestedFilename, setSuggestedFilename] = useState('');
   const [error, setError] = useState<ErrorInfo | null>(null);
   const [inspecting, setInspecting] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -56,12 +60,15 @@ export function DownloadPanel(): ReactNode {
           // Prefilled from the title, already sanitized, so what is shown is what
           // lands on disk. Playlists keep using the template.
           const single = result.value.kind === 'video' ? result.value.entries[0] : undefined;
-          setFilename(single ? sanitizeFilename(stripKnownExtension(single.title)) : '');
+          const suggested = single ? sanitizeFilename(stripKnownExtension(single.title)) : '';
+          setFilename(suggested);
+          setSuggestedFilename(suggested);
           setError(null);
         } else {
           setInspection(null);
           setSelectedIds([]);
           setFilename('');
+          setSuggestedFilename('');
           setError(result.error);
         }
       })
@@ -82,6 +89,7 @@ export function DownloadPanel(): ReactNode {
   const selectedEntries =
     inspection?.entries.filter((entry) => selectedIds.includes(entry.id)) ?? [];
   const isSingleVideo = inspection?.kind === 'video';
+  const isRenamed = isSingleVideo && filename.trim() !== suggestedFilename;
 
   /**
    * Hands a finished download to the meta editor, if that is what the user asked
@@ -110,6 +118,10 @@ export function DownloadPanel(): ReactNode {
           title: entry.title,
           // Only a single file has a name the user could have chosen.
           filename: isSingleVideo && filename.trim() ? filename : null,
+          // What the user typed rather than the sanitized file name: a tag can
+          // hold the slash or colon that a file name on Windows cannot.
+          embeddedTitle:
+            isRenamed && settings.useFilenameAsTitle ? stripKnownExtension(filename.trim()) : null,
         })),
         options: {
           target: settings.downloadTarget,
@@ -195,15 +207,7 @@ export function DownloadPanel(): ReactNode {
 
       <Divider label="Output" labelPosition="left" />
 
-      {isSingleVideo && settings ? (
-        <TextInput
-          label="Save as"
-          description={`The .${downloadTargetById(settings.downloadTarget).ext} extension is added automatically.`}
-          value={filename}
-          onChange={(event) => setFilename(event.currentTarget.value)}
-          error={filename.trim() ? null : 'A file name is required.'}
-        />
-      ) : null}
+      {isSingleVideo ? <SaveAsField value={filename} onChange={setFilename} /> : null}
 
       <DownloadOptionsForm showFilenameTemplate={!isSingleVideo} />
     </Stack>

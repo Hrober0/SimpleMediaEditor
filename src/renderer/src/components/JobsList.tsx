@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
-import { Badge, Button, Group, Paper, Progress, Stack, Text } from '@mantine/core';
+import { Button, Group, Paper, Progress, Stack, Text } from '@mantine/core';
 import { IconFolderOpen, IconX } from '@tabler/icons-react';
-import { isJobActive, isJobFinished, type Job, type JobStatus } from '@shared/jobs';
+import { isJobActive, isJobFinished, type Job } from '@shared/jobs';
 import { useJobs } from '../state/JobsContext';
 import { FailureAlert } from './FailureAlert';
+import { JobStatusBadge } from './JobStatusBadge';
 
 /**
  * The one progress surface in the app. Every module's long-running work shows up
@@ -41,14 +42,6 @@ export function JobsList(): ReactNode {
   );
 }
 
-const STATUS_COLORS: Record<JobStatus, string> = {
-  queued: 'gray',
-  running: 'blue',
-  done: 'teal',
-  failed: 'red',
-  cancelled: 'gray',
-};
-
 function JobCard({ job }: { job: Job }): ReactNode {
   const { cancel, showInFolder } = useJobs();
   const active = isJobActive(job);
@@ -60,13 +53,7 @@ function JobCard({ job }: { job: Job }): ReactNode {
           <Text size="sm" fw={500} lineClamp={2} style={{ flex: 1, minWidth: 0 }}>
             {job.label}
           </Text>
-          {/*
-            Without flexShrink the badge is compressed by a long job title until
-            its own label wraps mid-word.
-          */}
-          <Badge color={STATUS_COLORS[job.status]} variant="light" style={{ flexShrink: 0 }}>
-            {job.status}
-          </Badge>
+          <JobStatusBadge status={job.status} />
         </Group>
 
         {active ? (

@@ -100,6 +100,15 @@ it.
   filename template is then hidden, since only one of the two can decide the
   name. A literal name has its `%` escaped, or a title like "50% Off" would be
   read as a yt-dlp field reference.
+- **A renamed file gets the new name as its title tag** (added 2026-10-28), so a
+  player shows what the file is called. It is a remembered switch, on by default,
+  and applies only when the name was changed from the suggestion: accepting the
+  suggestion keeps YouTube's own title, which can hold characters the sanitized
+  name lost. The tag takes what the user typed, so `AC/DC` stays `AC/DC` even
+  though the file is `AC_DC`. Done with `--replace-in-metadata title
+  '(?s)\A.*\Z'`: a bare `.*` also matches the empty end of the string and
+  Python writes the replacement twice, and backslashes in the title are doubled
+  because the replacement is an `re.sub` template.
 - **Open in Media meta editor when finished** is a remembered switch for single
   videos. The handoff goes through `state/NavigationProvider`, so neither module
   imports the other.
@@ -258,3 +267,88 @@ parsing and snapping, request validation) and by integration tests against the
 real ffmpeg on generated media: single and multi-part trims with tags and cover
 art, precise length, a sparse-keyframe mp4 cut into three out-of-order parts,
 save as, and a failed trim leaving the original untouched.
+
+### Saved file out of step with the editor
+
+_Fixed 2026-10-28._
+
+- **The preview kept playing the old file after a save.** Saving in place
+  reopens the same path, so the `<audio>`/`<video>` elements got an identical
+  `src`, and an element given the same `src` keeps what it already loaded. The
+  waveform showed the new file while the sound came from the old one. The
+  preview URL now carries a revision that changes on every open.
+- **Fast export drifted at every cut.** A copied part's audio runs up to one
+  codec frame past its cut, and the concat demuxer started the next part after
+  the longer stream, so each part after a cut landed late (26 ms per cut with
+  AAC). The concat list now gives each part an `outpoint`. What is left is the
+  audio frame that starts just before each keyframe, a few milliseconds that do
+  not add up across parts.
+- Because of that, a file saved in fast mode has its keyframes a few
+  milliseconds after the old cut points, and cutting there again went back a
+  whole keyframe interval, bringing back what had been cut. A keyframe up to
+  30 ms ahead of a start now counts as on it.
+
+`track-edit-save.integration.test.ts` checks this end to end for mp3 and mp4,
+fast and precise: segments built with the editor's own model, saved, then read
+back as a loud and silent shape that has to match what the editor showed,
+including a second edit after reopening.
+
+---
+
+## Loudness normalization
+
+_Added 2026-10-28._
+
+Bring a batch of files to one loudness. Shown in the sidebar under **Batch** as
+**Loudness normalization**. Pick or drop any number of files, choose a target,
+and choose whether to replace the originals or write copies to a folder.
+
+- **Two passes, always.** The first runs `loudnorm` to measure and discards the
+  audio; the second feeds those measurements back with `linear=true`, so one
+  fixed gain is applied to the whole file. Single pass rides the gain up and
+  down through the track, which is audible and lands off target.
+- **Targets are data** (`LOUDNESS_TARGETS` in `shared/normalize.ts`): -14 LUFS
+  for streaming (the default), -16 for Apple Music and podcasts, -23 for EBU R128
+  broadcast. True peak is held under -1.5 dBTP for all three, so a lossy encoder's
+  overshoot does not clip.
+- `LRA=20`: loudnorm only stays linear when the file's own loudness range fits
+  under the target range, and anything wider gets compressed. 20 LU leaves
+  nearly all music alone. When it does compress (usually a quiet, peaky track
+  pushed to -14), the result says so.
+- **One job per file**, through the shared queue. The measuring pass fills the
+  first half of the progress bar, the writing pass the second.
+- **Before and after are reported.** A job can now set what its line says once
+  done (`setFinishedDetail`), so a finished file reads "Was -21.3 LUFS, now -14.0
+  LUFS" in the Jobs list and in the panel's own file list, which follows each
+  file's job.
+- **Only the first audio stream is re-encoded**; video, cover art, other audio
+  tracks and tags are stream copied (`-map 0 -c copy` with `-c:a:0` and
+  `-filter:a:0` overriding). The encoder is the one Track Edit's precise export
+  uses for the container, at the source's bitrate (probe now reports a stream's
+  bitrate) and sample rate: loudnorm works at 192 kHz and would output that.
+- **Lossless files keep their bit depth** (`main/media/audio-encoder.ts`, which
+  Track Edit's precise export uses as well). A PCM source keeps its own PCM codec
+  (`pcm_s24le`, `pcm_f32le`), since the container default `pcm_s16le` would cut
+  a 24-bit WAV down to 16 bits. FLAC is asked for the source's sample format:
+  left to choose from loudnorm's floating point output, it writes 24-bit even
+  for a 16-bit source. Probe now reports a stream's sample format for this.
+  Track Edit's precise export had the same 16-bit WAV problem and was fixed in
+  the same change, with integration tests trimming 24-bit and float WAV and
+  16-bit and 24-bit FLAC.
+- **Writes go through `safe-write.ts`** like every other write: temp sibling,
+  re-probe, compare, replace. A file already within 0.5 LU of the target, with
+  peaks under the limit, is left untouched when replacing in place.
+- Silence (below -70 LUFS, where EBU R128's gate starts) fails with a message
+  rather than amplifying noise. Two files with the same name are refused when
+  writing to one folder, since the second would overwrite the first.
+- The panel accepts several files at once, through a new multi-select dialog
+  channel and `addDroppedFiles` in `components/media-drop.ts`. The job status
+  badge moved into `components/JobStatusBadge` so the Jobs list and this panel
+  colour it the same.
+
+Covered by unit tests (filter and argument construction, parsing loudnorm's
+JSON including silence, request validation, the finished detail in the queue)
+and by integration tests against the real ffmpeg: an mp3 with tags and cover
+art normalized in place and measured again independently, a second run left
+unchanged, an mp4 written to a folder with its video intact and the original
+untouched, and a silent file failing without touching anything.

@@ -128,9 +128,24 @@ export function buildDownloadArgs(
     '--output',
     outputTemplate(item, options),
     ...targetArgs(options),
+    ...embeddedTitleArgs(item.embeddedTitle),
     '--',
     item.url,
   ];
+}
+
+/**
+ * Replaces the title yt-dlp embeds. `\A.*\Z` matches the whole title exactly
+ * once: a bare `.*` also matches the empty string left at the end, and Python
+ * would write the replacement twice. The replacement is a Python `re.sub`
+ * template, where a backslash starts a group reference, so backslashes in the
+ * title are doubled to stay literal.
+ *
+ * The output name is unaffected: a renamed file has its name given literally.
+ */
+function embeddedTitleArgs(title: string | null): string[] {
+  if (!title) return [];
+  return ['--replace-in-metadata', 'title', '(?s)\\A.*\\Z', title.replaceAll('\\', '\\\\')];
 }
 
 /**

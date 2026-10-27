@@ -10,7 +10,12 @@ import {
   videoFormatSelector,
 } from './args';
 
-const item: DownloadItem = { url: 'https://youtu.be/abc', title: 'A song', filename: null };
+const item: DownloadItem = {
+  url: 'https://youtu.be/abc',
+  title: 'A song',
+  filename: null,
+  embeddedTitle: null,
+};
 
 const onPath: JsRuntime = { name: 'deno', path: null };
 const located: JsRuntime = { name: 'node', path: '/opt/node/bin/node' };
@@ -141,6 +146,28 @@ describe('buildDownloadArgs', () => {
 
     const withoutFfmpeg = buildDownloadArgs(item, mp3, { ...context, ffmpegDirectory: null });
     expect(withoutFfmpeg).not.toContain('--ffmpeg-location');
+  });
+
+  it('keeps the video title when no other was asked for', () => {
+    expect(buildDownloadArgs(item, mp3, context)).not.toContain('--replace-in-metadata');
+  });
+
+  it('replaces the whole embedded title, once', () => {
+    const args = buildDownloadArgs({ ...item, embeddedTitle: 'My Song' }, mp3, context);
+    const index = args.indexOf('--replace-in-metadata');
+    expect(args.slice(index + 1, index + 4)).toEqual(['title', '(?s)\\A.*\\Z', 'My Song']);
+  });
+
+  it('keeps backslashes in a title literal rather than group references', () => {
+    const args = buildDownloadArgs({ ...item, embeddedTitle: 'AC\\DC \\1' }, mp3, context);
+    const index = args.indexOf('--replace-in-metadata');
+    expect(args[index + 3]).toBe('AC\\\\DC \\\\1');
+  });
+
+  it('keeps a hostile title before the -- that ends the flags', () => {
+    const args = buildDownloadArgs({ ...item, embeddedTitle: '--exec rm' }, mp3, context);
+    expect(args.indexOf('--exec rm')).toBeLessThan(args.indexOf('--'));
+    expect(args[args.indexOf('--exec rm') - 1]).toBe('(?s)\\A.*\\Z');
   });
 
   it('puts the URL after -- so a hostile title or URL cannot inject a flag', () => {

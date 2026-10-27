@@ -34,6 +34,7 @@ export function normalizeSettings(settings: Partial<AppSettings>): AppSettings {
     filenameTemplate: nonEmptyString(merged.filenameTemplate) ?? DEFAULT_SETTINGS.filenameTemplate,
     restrictFilenames: Boolean(merged.restrictFilenames),
     openInMetaEditorAfterDownload: Boolean(merged.openInMetaEditorAfterDownload),
+    useFilenameAsTitle: Boolean(merged.useFilenameAsTitle),
     jobConcurrency: clampConcurrency(merged.jobConcurrency),
   };
 }

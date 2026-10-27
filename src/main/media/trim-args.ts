@@ -1,6 +1,7 @@
 import type { TagFamily } from '@shared/media-types';
-import type { TagValues } from '@shared/metadata';
+import type { StreamSummary, TagValues } from '@shared/metadata';
 import type { KeepRange } from '@shared/trim';
+import { audioEncoder, sampleFormatArgs } from './audio-encoder';
 import { metadataArgs } from './tags';
 
 /**
@@ -22,29 +23,11 @@ import { metadataArgs } from './tags';
  * untagged.
  */
 
-/** Re-encode audio codec per container, so the output can still be opened as
- *  what its extension claims. Stream copy in `fast` mode needs none of this —
- *  it only applies to `precise` mode. */
-const PRECISE_AUDIO_CODEC: Record<string, string> = {
-  mp3: 'libmp3lame',
-  m4a: 'aac',
-  mp4: 'aac',
-  opus: 'libopus',
-  flac: 'flac',
-  wav: 'pcm_s16le',
-  webm: 'libopus',
-  mkv: 'aac',
-};
-
 const PRECISE_VIDEO_CODEC: Record<string, string> = {
   mp4: 'libx264',
   mkv: 'libx264',
   webm: 'libvpx-vp9',
 };
-
-export function preciseAudioCodec(ext: string): string {
-  return PRECISE_AUDIO_CODEC[ext] ?? 'aac';
-}
 
 export function preciseVideoCodec(ext: string): string {
   return PRECISE_VIDEO_CODEC[ext] ?? 'libx264';
@@ -113,13 +96,29 @@ export function buildFastSegmentArgs(request: FastSegmentRequest): string[] {
   ];
 }
 
+export interface ConcatPart {
+  path: string;
+  /** How long the part is meant to be, which is not always how long the copy came out. */
+  durationSeconds: number;
+}
+
 /**
  * The concat demuxer's list file. Paths are ones this app just created in its
  * own temp directory, but they are still escaped rather than trusted, since a
  * destination folder chosen by the user could itself contain a quote.
+ *
+ * Each part gets an `outpoint`. A stream copy can only stop audio at the end of
+ * a codec frame, so a copied part's audio runs up to a frame past the cut, and
+ * the demuxer starts the next part after the longer of its streams. Without the
+ * outpoint every part after a cut lands that much late: the saved file drifts
+ * away from what the editor showed, and its keyframes stop sitting on the cut
+ * points where the next edit expects them.
  */
-export function buildConcatListContent(segmentPaths: readonly string[]): string {
-  return segmentPaths.map((path) => `file ${escapeConcatPath(path)}`).join('\n') + '\n';
+export function buildConcatListContent(parts: readonly ConcatPart[]): string {
+  const entries = parts.map(
+    (part) => `file ${escapeConcatPath(part.path)}\noutpoint ${part.durationSeconds.toFixed(6)}`,
+  );
+  return entries.join('\n') + '\n';
 }
 
 function escapeConcatPath(path: string): string {
@@ -165,6 +164,8 @@ export interface PreciseTrimRequest {
   hasVideo: boolean;
   /** Destination extension, lowercase without the dot — picks the re-encode codec. */
   ext: string;
+  /** The source's audio stream, whose bit depth a lossless output keeps. */
+  sourceAudio: StreamSummary | null;
   metadata?: MetadataToKeep;
 }
 
@@ -218,7 +219,7 @@ export function buildPreciseTrimArgs(request: PreciseTrimRequest): string[] {
     '-filter_complex',
     chains.join(';'),
     ...(hasVideo ? ['-map', '[outv]', '-c:v', preciseVideoCodec(ext)] : []),
-    ...(hasAudio ? ['-map', '[outa]', '-c:a', preciseAudioCodec(ext)] : []),
+    ...(hasAudio ? ['-map', '[outa]', ...audioCodecArgs(ext, request.sourceAudio)] : []),
     '-map_metadata',
     '0',
     ...explicitMetadataArgs(request.metadata),
@@ -227,4 +228,9 @@ export function buildPreciseTrimArgs(request: PreciseTrimRequest): string[] {
     'pipe:1',
     outputPath,
   ];
+}
+
+function audioCodecArgs(ext: string, sourceAudio: StreamSummary | null): string[] {
+  const codec = audioEncoder(ext, sourceAudio?.codec ?? null);
+  return ['-c:a', codec, ...sampleFormatArgs(codec, sourceAudio?.sampleFormat ?? null, 'a')];
 }

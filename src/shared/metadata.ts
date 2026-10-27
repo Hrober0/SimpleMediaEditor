@@ -156,6 +156,10 @@ export interface StreamSummary {
   /** Audio only. */
   channels: number | null;
   sampleRate: number | null;
+  /** Bits per second, when the container reports one per stream. */
+  bitrate: number | null;
+  /** Audio only: ffmpeg's sample format, without the planar suffix ("s16", "s32", "flt"). */
+  sampleFormat: string | null;
 }
 
 /** What ffprobe says about a file the user opened. */

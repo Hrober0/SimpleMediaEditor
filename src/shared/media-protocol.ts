@@ -6,6 +6,12 @@
  */
 export const MEDIA_PROTOCOL_SCHEME = 'mediaeditor-file';
 
-export function mediaFileUrl(path: string): string {
-  return `${MEDIA_PROTOCOL_SCHEME}://local/media?path=${encodeURIComponent(path)}`;
+/**
+ * `revision` changes the URL without changing the file it points at. A media
+ * element given the same `src` again keeps what it already loaded, so after a
+ * file is saved over, reopening it under a new revision is what makes the
+ * element read the new contents. Main ignores the value.
+ */
+export function mediaFileUrl(path: string, revision = 0): string {
+  return `${MEDIA_PROTOCOL_SCHEME}://local/media?path=${encodeURIComponent(path)}&revision=${String(revision)}`;
 }

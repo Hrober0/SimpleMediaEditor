@@ -10,6 +10,7 @@ import type { BinaryId, BinaryStatus } from './binaries';
 import type { StartDownloadsRequest, UrlInspection } from './download';
 import type { Job } from './jobs';
 import type { CoverImage, OpenedMedia, SaveTagsRequest } from './metadata';
+import type { NormalizeJobs, NormalizeRequest } from './normalize';
 import type { Result } from './result';
 import type { AppSettings } from './settings';
 import type { TrimRequest } from './trim';
@@ -56,6 +57,7 @@ export interface IpcInvokeContract {
   'dialog:pickDirectory': { request: PickDirectoryRequest; response: string | null };
   'dialog:pickBinary': { request: PickBinaryRequest; response: string | null };
   'dialog:pickMediaFile': { request: void; response: string | null };
+  'dialog:pickMediaFiles': { request: void; response: string[] };
   'dialog:pickImage': { request: void; response: string | null };
   'dialog:pickSaveTarget': { request: PickSaveTargetRequest; response: string | null };
   'media:probe': { request: { path: string }; response: Result<OpenedMedia> };
@@ -65,6 +67,7 @@ export interface IpcInvokeContract {
   'media:saveTags': { request: SaveTagsRequest; response: Result<{ jobId: string }> };
   'media:waveform': { request: WaveformRequest; response: Result<WaveformPeaks> };
   'media:trim': { request: TrimRequest; response: Result<{ jobId: string }> };
+  'media:normalize': { request: NormalizeRequest; response: Result<NormalizeJobs> };
   'ytdlp:inspect': { request: { url: string }; response: Result<UrlInspection> };
   'ytdlp:download': { request: StartDownloadsRequest; response: Result<{ jobIds: string[] }> };
   'jobs:list': { request: void; response: readonly Job[] };
@@ -97,6 +100,8 @@ export interface MediaEditorApi {
   pickDirectory(request: PickDirectoryRequest): Promise<string | null>;
   pickBinary(request: PickBinaryRequest): Promise<string | null>;
   pickMediaFile(): Promise<string | null>;
+  /** Several files at once; empty when the dialog was cancelled. */
+  pickMediaFiles(): Promise<string[]>;
   pickImage(): Promise<string | null>;
   pickSaveTarget(sourcePath: string): Promise<string | null>;
   probeMedia(path: string): Promise<Result<OpenedMedia>>;
@@ -107,6 +112,7 @@ export interface MediaEditorApi {
   saveTags(request: SaveTagsRequest): Promise<Result<{ jobId: string }>>;
   waveform(request: WaveformRequest): Promise<Result<WaveformPeaks>>;
   trimMedia(request: TrimRequest): Promise<Result<{ jobId: string }>>;
+  normalizeLoudness(request: NormalizeRequest): Promise<Result<NormalizeJobs>>;
   inspectUrl(url: string): Promise<Result<UrlInspection>>;
   startDownloads(request: StartDownloadsRequest): Promise<Result<{ jobIds: string[] }>>;
   listJobs(): Promise<readonly Job[]>;

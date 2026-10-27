@@ -321,6 +321,61 @@ describe('fast trimming an mp4 with keyframes far apart', () => {
   });
 });
 
+describe('precise trimming of lossless files', () => {
+  it.each([
+    { name: 'deep.wav', codecArgs: ['-c:a', 'pcm_s24le'], codec: 'pcm_s24le', sampleFormat: 's32' },
+    {
+      name: 'float.wav',
+      codecArgs: ['-c:a', 'pcm_f32le'],
+      codec: 'pcm_f32le',
+      sampleFormat: 'flt',
+    },
+    {
+      name: 'plain.flac',
+      codecArgs: ['-c:a', 'flac', '-sample_fmt', 's16'],
+      codec: 'flac',
+      sampleFormat: 's16',
+    },
+    {
+      name: 'deep.flac',
+      codecArgs: ['-c:a', 'flac', '-sample_fmt', 's32'],
+      codec: 'flac',
+      sampleFormat: 's32',
+    },
+  ])('keeps $name as $codec in $sampleFormat', async ({ name, codecArgs, codec, sampleFormat }) => {
+    const path = join(workDirectory, name);
+    await ffmpeg([
+      '-hide_banner',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=440:duration=4',
+      '-ar',
+      '48000',
+      ...codecArgs,
+      path,
+    ]);
+
+    const job = await trim({
+      sourcePath: path,
+      destinationPath: path,
+      ranges: [
+        { startSeconds: 0, endSeconds: 1 },
+        { startSeconds: 2, endSeconds: 3 },
+      ],
+      mode: 'precise',
+    });
+
+    expect(job.error).toBeNull();
+    expect(job.status).toBe('done');
+    const after = await probeFile(path, probeDeps);
+    expect(after.audio?.codec).toBe(codec);
+    expect(after.audio?.sampleFormat).toBe(sampleFormat);
+    expect(after.durationSeconds ?? 0).toBeCloseTo(2, 1);
+  });
+});
+
 describe('save as', () => {
   it('writes a trimmed copy and leaves the source untouched', async () => {
     const source = await makeMp3('save-as-source.mp3', 6);

@@ -82,6 +82,17 @@ describe('the media protocol', () => {
     expect(response.headers.get('Cache-Control')).toBe('no-store');
   });
 
+  it('gives a reopened file a new URL, and serves the same file under it', async () => {
+    expect(mediaFileUrl(mediaPath, 2)).not.toBe(mediaFileUrl(mediaPath, 1));
+
+    const handler = handlers.get(MEDIA_PROTOCOL_SCHEME);
+    if (!handler) throw new Error('The media protocol handler was never registered.');
+    const response = await handler(new Request(mediaFileUrl(mediaPath, 2)));
+
+    expect(response.status).toBe(200);
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(CONTENT);
+  });
+
   it('refuses a relative path', async () => {
     expect((await fetchMedia('track.mp3')).status).toBe(404);
   });

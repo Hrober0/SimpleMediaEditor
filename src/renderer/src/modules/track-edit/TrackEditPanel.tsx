@@ -53,6 +53,9 @@ export function TrackEditPanel(): ReactNode {
   const [mode, setMode] = useState<TrimExportMode>('fast');
   const [error, setError] = useState<ErrorInfo | null>(null);
   const [opening, setOpening] = useState(false);
+  // Saving reopens the same path. Without a new count the preview would keep
+  // playing the file as it was before the save, out of step with the waveform.
+  const [openCount, setOpenCount] = useState(0);
 
   const waveform = useWaveform(media);
 
@@ -75,6 +78,7 @@ export function TrackEditPanel(): ReactNode {
         }
 
         setMedia(result.value);
+        setOpenCount((count) => count + 1);
         playback.reset();
         setSelection(null);
         setClipboard(null);
@@ -207,6 +211,7 @@ export function TrackEditPanel(): ReactNode {
 
           <Player
             info={media.info}
+            openCount={openCount}
             elementRefs={playback.elementRefs}
             activeElement={playback.activeElement}
           />
