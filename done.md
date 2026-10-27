@@ -259,6 +259,31 @@ real ffmpeg on generated media: single and multi-part trims with tags and cover
 art, precise length, a sparse-keyframe mp4 cut into three out-of-order parts,
 save as, and a failed trim leaving the original untouched.
 
+### Saved file out of step with the editor
+
+_Fixed 2026-10-28._
+
+- **The preview kept playing the old file after a save.** Saving in place
+  reopens the same path, so the `<audio>`/`<video>` elements got an identical
+  `src`, and an element given the same `src` keeps what it already loaded. The
+  waveform showed the new file while the sound came from the old one. The
+  preview URL now carries a revision that changes on every open.
+- **Fast export drifted at every cut.** A copied part's audio runs up to one
+  codec frame past its cut, and the concat demuxer started the next part after
+  the longer stream, so each part after a cut landed late (26 ms per cut with
+  AAC). The concat list now gives each part an `outpoint`. What is left is the
+  audio frame that starts just before each keyframe, a few milliseconds that do
+  not add up across parts.
+- Because of that, a file saved in fast mode has its keyframes a few
+  milliseconds after the old cut points, and cutting there again went back a
+  whole keyframe interval, bringing back what had been cut. A keyframe up to
+  30 ms ahead of a start now counts as on it.
+
+`track-edit-save.integration.test.ts` checks this end to end for mp3 and mp4,
+fast and precise: segments built with the editor's own model, saved, then read
+back as a loud and silent shape that has to match what the editor showed,
+including a second edit after reopening.
+
 ---
 
 ## Loudness normalization

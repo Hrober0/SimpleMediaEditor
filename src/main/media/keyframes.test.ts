@@ -68,6 +68,19 @@ describe('snapToKeyframes', () => {
     ]);
   });
 
+  it('moves onto a keyframe a few milliseconds ahead rather than a whole interval back', () => {
+    // Where a file saved in fast mode has its keyframes: just after the old cut.
+    expect(snapToKeyframes([{ startSeconds: 2, endSeconds: 4 }], [0, 1, 2.005957, 3])).toEqual([
+      { startSeconds: 2.006, endSeconds: 4 },
+    ]);
+  });
+
+  it('still goes back when the next keyframe is more than a frame ahead', () => {
+    expect(snapToKeyframes([{ startSeconds: 2, endSeconds: 4 }], [0, 1, 2.05, 3])).toEqual([
+      { startSeconds: 1, endSeconds: 4 },
+    ]);
+  });
+
   it('changes nothing when no keyframes were found', () => {
     expect(snapToKeyframes([{ startSeconds: 5, endSeconds: 9 }], [])).toEqual([
       { startSeconds: 5, endSeconds: 9 },

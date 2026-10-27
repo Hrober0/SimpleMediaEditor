@@ -6,6 +6,8 @@ import type { ElementIndex } from './segment-player';
 
 interface PlayerProps {
   info: MediaInfo;
+  /** How many times a file has been opened, so reopening one after a save reloads it. */
+  openCount: number;
   /** Two elements on the same file, so a cut point is crossed without a seek. */
   elementRefs: readonly [RefCallback<HTMLMediaElement>, RefCallback<HTMLMediaElement>];
   activeElement: ElementIndex;
@@ -21,8 +23,8 @@ const PRELOAD = 'metadata';
  * driven the same way, by the playback hook setting `currentTime` on the
  * elements directly, so the two only differ in what they render.
  */
-export function Player({ info, elementRefs, activeElement }: PlayerProps): ReactNode {
-  const src = mediaFileUrl(info.path);
+export function Player({ info, openCount, elementRefs, activeElement }: PlayerProps): ReactNode {
+  const src = mediaFileUrl(info.path, openCount);
 
   if (info.kind === 'video') {
     // Stacked in one grid cell, the waiting video kept fully transparent

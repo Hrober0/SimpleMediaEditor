@@ -76,18 +76,30 @@ describe('buildFastSegmentArgs', () => {
 });
 
 describe('buildConcatListContent', () => {
-  it('lists each segment on its own quoted line', () => {
-    expect(buildConcatListContent(['/tmp/a.mp3', '/tmp/b.mp3'])).toBe(
-      "file '/tmp/a.mp3'\nfile '/tmp/b.mp3'\n",
-    );
+  const part = (path: string): { path: string; durationSeconds: number } => ({
+    path,
+    durationSeconds: 2,
+  });
+
+  it('lists each segment with the point it should end at', () => {
+    expect(
+      buildConcatListContent([
+        { path: '/tmp/a.mp3', durationSeconds: 2 },
+        { path: '/tmp/b.mp3', durationSeconds: 1.5 },
+      ]),
+    ).toBe("file '/tmp/a.mp3'\noutpoint 2.000000\nfile '/tmp/b.mp3'\noutpoint 1.500000\n");
   });
 
   it('escapes a single quote in a path', () => {
-    expect(buildConcatListContent(["/tmp/it's mine.mp3"])).toBe("file '/tmp/it'\\''s mine.mp3'\n");
+    expect(buildConcatListContent([part("/tmp/it's mine.mp3")])).toContain(
+      "file '/tmp/it'\\''s mine.mp3'\n",
+    );
   });
 
   it('escapes a backslash in a Windows path', () => {
-    expect(buildConcatListContent(['C:\\Users\\a.mp3'])).toBe("file 'C:\\\\Users\\\\a.mp3'\n");
+    expect(buildConcatListContent([part('C:\\Users\\a.mp3')])).toContain(
+      "file 'C:\\\\Users\\\\a.mp3'\n",
+    );
   });
 });
 

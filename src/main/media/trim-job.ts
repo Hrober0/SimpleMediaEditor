@@ -23,6 +23,7 @@ import {
   buildConcatListContent,
   buildFastSegmentArgs,
   buildPreciseTrimArgs,
+  type ConcatPart,
   type MetadataToKeep,
 } from './trim-args';
 import { buildWriteArgs } from './write-args';
@@ -215,14 +216,14 @@ async function cutRanges(options: CutOptions): Promise<boolean> {
   // concat demuxer stitches them back into a single file. Segments are
   // intermediate, so they carry no explicit tags — only the final, joined
   // file needs them.
-  const segmentPaths: string[] = [];
+  const parts: ConcatPart[] = [];
   for (let index = 0; index < ranges.length; index += 1) {
     const range = ranges[index];
     if (!range) continue;
     // The extension has to stay last, or ffmpeg cannot guess a muxer for the
     // output at all and refuses to write it.
     const segmentPath = tempOutputPath(options.outputPath, `segment-${String(index)}`);
-    segmentPaths.push(segmentPath);
+    parts.push({ path: segmentPath, durationSeconds: range.endSeconds - range.startSeconds });
     options.cleanupPaths.push(segmentPath);
 
     context.setDetail(`Cutting part ${String(index + 1)} of ${String(ranges.length)}`);
@@ -239,7 +240,7 @@ async function cutRanges(options: CutOptions): Promise<boolean> {
 
   const listPath = `${options.outputPath}.concat.txt`;
   options.cleanupPaths.push(listPath);
-  await writeFile(listPath, buildConcatListContent(segmentPaths), 'utf8');
+  await writeFile(listPath, buildConcatListContent(parts), 'utf8');
 
   context.setDetail('Joining the parts');
   context.setProgress(null);

@@ -96,14 +96,21 @@ export async function readKeyframes(path: string, deps: KeyframeDeps): Promise<n
 }
 
 /**
- * How far past a keyframe a start may already sit and still count as on it.
- * Covers the rounding in ffprobe's six-decimal times.
+ * How far ahead of a start a keyframe may sit and still count as on it.
+ *
+ * A file this app already saved in fast mode has its keyframes a few
+ * milliseconds after where the cuts were: each copied part keeps the audio
+ * frame that began just before its keyframe, which pushes the picture that much
+ * later. Cutting there again would otherwise go back a whole keyframe interval
+ * and bring back a second or more of what was cut. Starting up to this much
+ * late instead loses less than one video frame.
  */
-const ON_KEYFRAME_SECONDS = 0.001;
+const ON_KEYFRAME_SECONDS = 0.03;
 
 /**
- * Moves each range's start back to the keyframe at or before it. The end is
- * left alone: a copy can stop on any frame.
+ * Moves each range's start back to the keyframe at or before it, or forward
+ * onto one only a few milliseconds ahead. The end is left alone: a copy can
+ * stop on any frame.
  *
  * The new start is rounded up to the next millisecond, never down. ffmpeg
  * seeks to the last keyframe at or before `-ss`, and a time rounded to just
@@ -115,7 +122,10 @@ export function snapToKeyframes(
 ): KeepRange[] {
   if (keyframes.length === 0) return ranges.map((range) => ({ ...range }));
   return ranges.map((range) => {
-    const keyframe = lastAtOrBefore(keyframes, range.startSeconds + ON_KEYFRAME_SECONDS);
+    const keyframe = lastAtOrBefore(
+      keyframes,
+      Math.min(range.startSeconds + ON_KEYFRAME_SECONDS, range.endSeconds),
+    );
     if (keyframe === null) return { ...range };
     return {
       startSeconds: Math.max(0, Math.ceil(keyframe * 1000) / 1000),

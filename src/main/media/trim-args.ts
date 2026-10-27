@@ -96,13 +96,29 @@ export function buildFastSegmentArgs(request: FastSegmentRequest): string[] {
   ];
 }
 
+export interface ConcatPart {
+  path: string;
+  /** How long the part is meant to be, which is not always how long the copy came out. */
+  durationSeconds: number;
+}
+
 /**
  * The concat demuxer's list file. Paths are ones this app just created in its
  * own temp directory, but they are still escaped rather than trusted, since a
  * destination folder chosen by the user could itself contain a quote.
+ *
+ * Each part gets an `outpoint`. A stream copy can only stop audio at the end of
+ * a codec frame, so a copied part's audio runs up to a frame past the cut, and
+ * the demuxer starts the next part after the longer of its streams. Without the
+ * outpoint every part after a cut lands that much late: the saved file drifts
+ * away from what the editor showed, and its keyframes stop sitting on the cut
+ * points where the next edit expects them.
  */
-export function buildConcatListContent(segmentPaths: readonly string[]): string {
-  return segmentPaths.map((path) => `file ${escapeConcatPath(path)}`).join('\n') + '\n';
+export function buildConcatListContent(parts: readonly ConcatPart[]): string {
+  const entries = parts.map(
+    (part) => `file ${escapeConcatPath(part.path)}\noutpoint ${part.durationSeconds.toFixed(6)}`,
+  );
+  return entries.join('\n') + '\n';
 }
 
 function escapeConcatPath(path: string): string {
