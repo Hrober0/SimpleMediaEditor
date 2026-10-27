@@ -100,6 +100,15 @@ it.
   filename template is then hidden, since only one of the two can decide the
   name. A literal name has its `%` escaped, or a title like "50% Off" would be
   read as a yt-dlp field reference.
+- **A renamed file gets the new name as its title tag** (added 2026-10-28), so a
+  player shows what the file is called. It is a remembered switch, on by default,
+  and applies only when the name was changed from the suggestion: accepting the
+  suggestion keeps YouTube's own title, which can hold characters the sanitized
+  name lost. The tag takes what the user typed, so `AC/DC` stays `AC/DC` even
+  though the file is `AC_DC`. Done with `--replace-in-metadata title
+  '(?s)\A.*\Z'`: a bare `.*` also matches the empty end of the string and
+  Python writes the replacement twice, and backslashes in the title are doubled
+  because the replacement is an `re.sub` template.
 - **Open in Media meta editor when finished** is a remembered switch for single
   videos. The handoff goes through `state/NavigationProvider`, so neither module
   imports the other.

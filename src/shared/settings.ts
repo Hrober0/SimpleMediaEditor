@@ -17,6 +17,11 @@ export interface AppSettings {
    * does: a playlist has no one file the app could pick.
    */
   openInMetaEditorAfterDownload: boolean;
+  /**
+   * Whether a single video saved under a name the user changed also gets that
+   * name as its title tag, so a player shows what the file is called.
+   */
+  useFilenameAsTitle: boolean;
   /** How many jobs run at once across every module. */
   jobConcurrency: number;
 }
@@ -36,5 +41,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Off by default: downloading a batch of music is the common case, and jumping
   // into the editor after each one would interrupt it.
   openInMetaEditorAfterDownload: false,
+  // On: a renamed file whose player still shows YouTube's title looks like the
+  // rename did not work.
+  useFilenameAsTitle: true,
   jobConcurrency: 2,
 };

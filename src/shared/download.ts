@@ -96,6 +96,11 @@ export interface DownloadItem {
    * null means "use the template", which is what playlists do.
    */
   filename: string | null;
+  /**
+   * A title tag to embed in place of the video's own, so a file the user renamed
+   * shows the same name in a player. null keeps YouTube's title.
+   */
+  embeddedTitle: string | null;
 }
 
 export interface StartDownloadsRequest {

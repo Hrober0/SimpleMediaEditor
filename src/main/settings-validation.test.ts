@@ -41,6 +41,11 @@ describe('normalizeSettings', () => {
     ).toBe(true);
   });
 
+  it('uses a changed file name as the title unless turned off', () => {
+    expect(normalizeSettings({}).useFilenameAsTitle).toBe(true);
+    expect(normalizeSettings({ useFilenameAsTitle: false }).useFilenameAsTitle).toBe(false);
+  });
+
   it('falls back when a choice is not one the app offers', () => {
     const hostile = {
       downloadTarget: 'exe',

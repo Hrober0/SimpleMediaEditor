@@ -112,7 +112,7 @@ describe('download job', () => {
     const queue = new JobQueue(() => 1);
     const job = queue.enqueue(
       createDownloadJob(
-        { url: SHORT_VIDEO, title: 'Me at the zoo', filename: 'zoo test' },
+        { url: SHORT_VIDEO, title: 'Me at the zoo', filename: 'zoo test', embeddedTitle: null },
         {
           target: 'mp3',
           audioQuality: '5',
@@ -150,6 +150,36 @@ describe('download job', () => {
     expect(await readdir(join(tempRoot, 'mediaeditor')).catch(() => [])).toEqual([]);
   });
 
+  it('embeds the name the file was renamed to as its title', async () => {
+    // Characters a file name cannot hold on Windows, a backslash that Python would
+    // read as a group reference, and a percent sign yt-dlp would read as a field.
+    const title = 'Zoo: the \\1 first / 100% video';
+    const queue = new JobQueue(() => 1);
+    const job = queue.enqueue(
+      createDownloadJob(
+        { url: SHORT_VIDEO, title: 'Me at the zoo', filename: 'renamed zoo', embeddedTitle: title },
+        {
+          target: 'mp3',
+          audioQuality: '5',
+          videoQuality: 'best',
+          destination,
+          filenameTemplate: '%(title)s.%(ext)s',
+          restrictFilenames: true,
+        },
+        deps,
+      ),
+    );
+
+    const { job: finished } = await watch(queue, job.id);
+
+    expect(finished.error).toBeNull();
+    expect(finished.outputPath).toBe(join(destination, 'renamed zoo.mp3'));
+    const probe = await probeFile(join(destination, 'renamed zoo.mp3'));
+    expect(probe).toContain(`TAG:title=${title}`);
+    // Only the title was replaced.
+    expect(probe).toContain('TAG:artist=jawed');
+  });
+
   it('reports a non-ASCII name as it is on disk, so the file can be opened again', async () => {
     // yt-dlp writes its output in the console codepage unless told otherwise, and
     // a path that arrives as undecodable bytes leaves the app unable to find the
@@ -158,7 +188,7 @@ describe('download job', () => {
     const queue = new JobQueue(() => 1);
     const job = queue.enqueue(
       createDownloadJob(
-        { url: SHORT_VIDEO, title: name, filename: name },
+        { url: SHORT_VIDEO, title: name, filename: name, embeddedTitle: null },
         {
           target: 'mp3',
           audioQuality: '5',
@@ -183,7 +213,7 @@ describe('download job', () => {
     const queue = new JobQueue(() => 1);
     const job = queue.enqueue(
       createDownloadJob(
-        { url: LARGE_VIDEO, title: 'cancel me', filename: 'cancel me' },
+        { url: LARGE_VIDEO, title: 'cancel me', filename: 'cancel me', embeddedTitle: null },
         {
           target: 'mp4',
           audioQuality: '0',

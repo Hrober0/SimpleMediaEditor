@@ -27,7 +27,7 @@ import type {
   IpcResponse,
 } from '@shared/ipc-contract';
 import { SUPPORTED_FORMATS, formatForExtension } from '@shared/media-types';
-import type { OpenedMedia } from '@shared/metadata';
+import { sanitizeTagValue, type OpenedMedia } from '@shared/metadata';
 import { err, ok, type Result } from '@shared/result';
 import type { BinaryResolver } from './binaries';
 import { AppFailure, toErrorInfo } from './errors';
@@ -399,6 +399,11 @@ function validateDownloadRequest(
       // Sanitized here rather than trusted from the renderer: this becomes a
       // filename on disk, and the same sanitizer serves every such path.
       filename: item.filename?.trim() ? sanitizeFilename(item.filename) : null,
+      // A tag value, not a path: only control characters and length are limited.
+      embeddedTitle:
+        typeof item.embeddedTitle === 'string'
+          ? sanitizeTagValue(item.embeddedTitle, false) || null
+          : null,
     }));
 
   if (items.length === 0) throw new AppFailure('No downloadable URL was provided.');
