@@ -11,6 +11,8 @@ const TAGGED_MP3 = JSON.stringify({
       codec_name: 'mp3',
       channels: 2,
       sample_rate: '44100',
+      sample_fmt: 'fltp',
+      bit_rate: '192000',
       disposition: { attached_pic: 0 },
     },
     {
@@ -60,6 +62,9 @@ describe('parseProbeOutput', () => {
     expect(info.audio?.codec).toBe('mp3');
     expect(info.audio?.channels).toBe(2);
     expect(info.audio?.sampleRate).toBe(44_100);
+    expect(info.audio?.bitrate).toBe(192_000);
+    // Planar is a memory layout, not a depth, so it is reported without the "p".
+    expect(info.audio?.sampleFormat).toBe('flt');
   });
 
   it('does not mistake embedded artwork for a video stream', () => {

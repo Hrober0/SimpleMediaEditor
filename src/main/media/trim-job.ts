@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';
 import type { TagFamily } from '@shared/media-types';
 import { formatForExtension } from '@shared/media-types';
-import type { MediaInfo } from '@shared/metadata';
+import type { MediaInfo, StreamSummary } from '@shared/metadata';
 import {
   sanitizeKeepRanges,
   totalKeptSeconds,
@@ -103,6 +103,7 @@ async function runTrim(
       hasAudio,
       hasVideo,
       ext: format.ext,
+      sourceAudio: source.audio,
       expectedSeconds,
       ffmpegPath: deps.ffmpegPath,
       context,
@@ -168,6 +169,7 @@ interface CutOptions {
   hasAudio: boolean;
   hasVideo: boolean;
   ext: string;
+  sourceAudio: StreamSummary | null;
   expectedSeconds: number;
   ffmpegPath: string;
   context: JobContext;
@@ -189,6 +191,7 @@ async function cutRanges(options: CutOptions): Promise<boolean> {
       hasAudio,
       hasVideo,
       ext,
+      sourceAudio: options.sourceAudio,
       metadata,
     });
     return runFfmpeg(args, ffmpegPath, expectedSeconds, context);

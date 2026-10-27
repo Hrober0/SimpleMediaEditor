@@ -37,6 +37,35 @@ export function openDroppedFile(files: File[], { onOpen, onError }: MediaSource)
   onOpen(api.pathForFile(file));
 }
 
+interface MediaFilesSource {
+  onAdd: (paths: string[]) => void;
+  onError: (error: ErrorInfo) => void;
+}
+
+export function browseForMediaFiles({ onAdd }: Pick<MediaFilesSource, 'onAdd'>): void {
+  void api.pickMediaFiles().then((paths) => {
+    if (paths.length > 0) onAdd(paths);
+  });
+}
+
+/**
+ * Every supported file in a drop. The rest are named in one error rather than
+ * failing the whole drop, so a folder's worth of tracks with a stray cover
+ * image still goes in.
+ */
+export function addDroppedFiles(files: File[], { onAdd, onError }: MediaFilesSource): void {
+  const supported = files.filter((file) => formatForExtension(file.name));
+  const refused = files.filter((file) => !formatForExtension(file.name));
+
+  if (refused.length > 0) {
+    onError({
+      message: `${refused.map((file) => file.name).join(', ')} ${refused.length === 1 ? 'is not a format' : 'are not formats'} this app can edit.`,
+      details: `Supported: ${supportedExtensions(', ')}`,
+    });
+  }
+  if (supported.length > 0) onAdd(supported.map((file) => api.pathForFile(file)));
+}
+
 export function supportedExtensions(separator: string): string {
   return SUPPORTED_FORMATS.map((format) => format.ext).join(separator);
 }

@@ -68,6 +68,22 @@ describe('JobQueue', () => {
     expect(done.finishedAt).not.toBeNull();
   });
 
+  it('shows what the job reported as its result once it is done', async () => {
+    const queue = new JobQueue(() => 1);
+    queue.enqueue({
+      kind: 'normalize',
+      label: 'test',
+      run: (context) => {
+        context.setFinishedDetail('Was -20.0 LUFS, now -14.0 LUFS');
+        context.setDetail('Replacing the file');
+        return Promise.resolve();
+      },
+    });
+
+    const done = await waitForJob(queue, (entry) => entry.status === 'done');
+    expect(done.detail).toBe('Was -20.0 LUFS, now -14.0 LUFS');
+  });
+
   it('honours the concurrency cap', async () => {
     const queue = new JobQueue(() => 2);
     const jobs = [deferredJob(), deferredJob(), deferredJob()];

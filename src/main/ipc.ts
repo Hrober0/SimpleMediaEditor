@@ -40,6 +40,8 @@ import {
   prepareCoverFromImage,
   type CoverDeps,
 } from './media/cover-art';
+import { createNormalizeJob } from './media/normalize-job';
+import { validateNormalizeRequest } from './media/normalize-request';
 import { probeFile } from './media/probe';
 import { validateSaveTagsRequest } from './media/save-request';
 import { createTagWriteJob } from './media/tag-job';
@@ -114,6 +116,15 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       filters: mediaFileFilters(),
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+
+  handle('dialog:pickMediaFiles', async (_request, event) => {
+    const result = await dialog.showOpenDialog(windowFrom(event), {
+      title: 'Choose media files',
+      properties: ['openFile', 'multiSelections'],
+      filters: mediaFileFilters(),
+    });
+    return result.canceled ? [] : result.filePaths;
   });
 
   handle('dialog:pickImage', async (_request, event) => {
@@ -237,6 +248,23 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       const validated = validateTrimRequest(request);
       const job = queue.enqueue(createTrimJob(validated, coverDeps()));
       return ok({ jobId: job.id });
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+  handle('media:normalize', (request) => {
+    try {
+      const tasks = validateNormalizeRequest(request);
+      const jobDeps = {
+        ffmpegPath: binaries.require('ffmpeg'),
+        ffprobePath: binaries.require('ffprobe'),
+      };
+      const jobIdsByPath: Record<string, string> = {};
+      for (const task of tasks) {
+        jobIdsByPath[task.sourcePath] = queue.enqueue(createNormalizeJob(task, jobDeps)).id;
+      }
+      return ok({ jobIdsByPath });
     } catch (error) {
       return failure(error);
     }

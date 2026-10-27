@@ -258,3 +258,63 @@ parsing and snapping, request validation) and by integration tests against the
 real ffmpeg on generated media: single and multi-part trims with tags and cover
 art, precise length, a sparse-keyframe mp4 cut into three out-of-order parts,
 save as, and a failed trim leaving the original untouched.
+
+---
+
+## Loudness normalization
+
+_Added 2026-10-28._
+
+Bring a batch of files to one loudness. Shown in the sidebar under **Batch** as
+**Loudness normalization**. Pick or drop any number of files, choose a target,
+and choose whether to replace the originals or write copies to a folder.
+
+- **Two passes, always.** The first runs `loudnorm` to measure and discards the
+  audio; the second feeds those measurements back with `linear=true`, so one
+  fixed gain is applied to the whole file. Single pass rides the gain up and
+  down through the track, which is audible and lands off target.
+- **Targets are data** (`LOUDNESS_TARGETS` in `shared/normalize.ts`): -14 LUFS
+  for streaming (the default), -16 for Apple Music and podcasts, -23 for EBU R128
+  broadcast. True peak is held under -1.5 dBTP for all three, so a lossy encoder's
+  overshoot does not clip.
+- `LRA=20`: loudnorm only stays linear when the file's own loudness range fits
+  under the target range, and anything wider gets compressed. 20 LU leaves
+  nearly all music alone. When it does compress (usually a quiet, peaky track
+  pushed to -14), the result says so.
+- **One job per file**, through the shared queue. The measuring pass fills the
+  first half of the progress bar, the writing pass the second.
+- **Before and after are reported.** A job can now set what its line says once
+  done (`setFinishedDetail`), so a finished file reads "Was -21.3 LUFS, now -14.0
+  LUFS" in the Jobs list and in the panel's own file list, which follows each
+  file's job.
+- **Only the first audio stream is re-encoded**; video, cover art, other audio
+  tracks and tags are stream copied (`-map 0 -c copy` with `-c:a:0` and
+  `-filter:a:0` overriding). The encoder is the one Track Edit's precise export
+  uses for the container, at the source's bitrate (probe now reports a stream's
+  bitrate) and sample rate: loudnorm works at 192 kHz and would output that.
+- **Lossless files keep their bit depth** (`main/media/audio-encoder.ts`, which
+  Track Edit's precise export uses as well). A PCM source keeps its own PCM codec
+  (`pcm_s24le`, `pcm_f32le`), since the container default `pcm_s16le` would cut
+  a 24-bit WAV down to 16 bits. FLAC is asked for the source's sample format:
+  left to choose from loudnorm's floating point output, it writes 24-bit even
+  for a 16-bit source. Probe now reports a stream's sample format for this.
+  Track Edit's precise export had the same 16-bit WAV problem and was fixed in
+  the same change, with integration tests trimming 24-bit and float WAV and
+  16-bit and 24-bit FLAC.
+- **Writes go through `safe-write.ts`** like every other write: temp sibling,
+  re-probe, compare, replace. A file already within 0.5 LU of the target, with
+  peaks under the limit, is left untouched when replacing in place.
+- Silence (below -70 LUFS, where EBU R128's gate starts) fails with a message
+  rather than amplifying noise. Two files with the same name are refused when
+  writing to one folder, since the second would overwrite the first.
+- The panel accepts several files at once, through a new multi-select dialog
+  channel and `addDroppedFiles` in `components/media-drop.ts`. The job status
+  badge moved into `components/JobStatusBadge` so the Jobs list and this panel
+  colour it the same.
+
+Covered by unit tests (filter and argument construction, parsing loudnorm's
+JSON including silence, request validation, the finished detail in the queue)
+and by integration tests against the real ffmpeg: an mp3 with tags and cover
+art normalized in place and measured again independently, a second run left
+unchanged, an mp4 written to a folder with its video intact and the original
+untouched, and a silent file failing without touching anything.

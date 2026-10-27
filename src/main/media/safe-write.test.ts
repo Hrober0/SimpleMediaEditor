@@ -94,7 +94,15 @@ function info(overrides: Partial<MediaInfo>): MediaInfo {
     kind: 'audio',
     durationSeconds: 200,
     bitrate: 192_000,
-    audio: { codec: 'mp3', width: null, height: null, channels: 2, sampleRate: 44_100 },
+    audio: {
+      codec: 'mp3',
+      width: null,
+      height: null,
+      channels: 2,
+      sampleRate: 44_100,
+      bitrate: 192_000,
+      sampleFormat: 'flt',
+    },
     video: null,
     coverStreamIndexes: [],
     tags: {},
@@ -118,7 +126,15 @@ describe('describeOutputMismatch', () => {
   });
 
   it('rejects an output that lost the video', () => {
-    const video = { codec: 'h264', width: 1920, height: 1080, channels: null, sampleRate: null };
+    const video = {
+      codec: 'h264',
+      width: 1920,
+      height: 1080,
+      channels: null,
+      sampleRate: null,
+      bitrate: null,
+      sampleFormat: null,
+    };
     const source = info({ kind: 'video', video });
     expect(describeOutputMismatch(source, info({ kind: 'video', video: null }))).toContain('video');
   });

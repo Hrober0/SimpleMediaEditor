@@ -106,6 +106,10 @@ function toStreamSummary(stream: Record<string, unknown> | undefined): StreamSum
     height: asNumber(stream.height),
     channels: asNumber(stream.channels),
     sampleRate: asNumber(stream.sample_rate),
+    bitrate: asNumber(stream.bit_rate),
+    // Planar or packed is how the decoder lays samples out in memory, not part
+    // of the file, so "s16p" and "s16" are the same depth.
+    sampleFormat: asString(stream.sample_fmt)?.replace(/p$/, '') ?? null,
   };
 }
 

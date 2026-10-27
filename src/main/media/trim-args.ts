@@ -1,6 +1,7 @@
 import type { TagFamily } from '@shared/media-types';
-import type { TagValues } from '@shared/metadata';
+import type { StreamSummary, TagValues } from '@shared/metadata';
 import type { KeepRange } from '@shared/trim';
+import { audioEncoder, sampleFormatArgs } from './audio-encoder';
 import { metadataArgs } from './tags';
 
 /**
@@ -22,29 +23,11 @@ import { metadataArgs } from './tags';
  * untagged.
  */
 
-/** Re-encode audio codec per container, so the output can still be opened as
- *  what its extension claims. Stream copy in `fast` mode needs none of this —
- *  it only applies to `precise` mode. */
-const PRECISE_AUDIO_CODEC: Record<string, string> = {
-  mp3: 'libmp3lame',
-  m4a: 'aac',
-  mp4: 'aac',
-  opus: 'libopus',
-  flac: 'flac',
-  wav: 'pcm_s16le',
-  webm: 'libopus',
-  mkv: 'aac',
-};
-
 const PRECISE_VIDEO_CODEC: Record<string, string> = {
   mp4: 'libx264',
   mkv: 'libx264',
   webm: 'libvpx-vp9',
 };
-
-export function preciseAudioCodec(ext: string): string {
-  return PRECISE_AUDIO_CODEC[ext] ?? 'aac';
-}
 
 export function preciseVideoCodec(ext: string): string {
   return PRECISE_VIDEO_CODEC[ext] ?? 'libx264';
@@ -165,6 +148,8 @@ export interface PreciseTrimRequest {
   hasVideo: boolean;
   /** Destination extension, lowercase without the dot — picks the re-encode codec. */
   ext: string;
+  /** The source's audio stream, whose bit depth a lossless output keeps. */
+  sourceAudio: StreamSummary | null;
   metadata?: MetadataToKeep;
 }
 
@@ -218,7 +203,7 @@ export function buildPreciseTrimArgs(request: PreciseTrimRequest): string[] {
     '-filter_complex',
     chains.join(';'),
     ...(hasVideo ? ['-map', '[outv]', '-c:v', preciseVideoCodec(ext)] : []),
-    ...(hasAudio ? ['-map', '[outa]', '-c:a', preciseAudioCodec(ext)] : []),
+    ...(hasAudio ? ['-map', '[outa]', ...audioCodecArgs(ext, request.sourceAudio)] : []),
     '-map_metadata',
     '0',
     ...explicitMetadataArgs(request.metadata),
@@ -227,4 +212,9 @@ export function buildPreciseTrimArgs(request: PreciseTrimRequest): string[] {
     'pipe:1',
     outputPath,
   ];
+}
+
+function audioCodecArgs(ext: string, sourceAudio: StreamSummary | null): string[] {
+  const codec = audioEncoder(ext, sourceAudio?.codec ?? null);
+  return ['-c:a', codec, ...sampleFormatArgs(codec, sourceAudio?.sampleFormat ?? null, 'a')];
 }

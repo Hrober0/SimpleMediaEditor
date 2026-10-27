@@ -93,7 +93,7 @@ function coverDispositionArgs(request: WriteArgsRequest): string[] {
   ];
 }
 
-function familyArgs(family: TagFamily): string[] {
+export function familyArgs(family: TagFamily): string[] {
   // ID3v2.3 is what Windows Explorer and older players read; ffmpeg defaults to
   // 2.4, whose tags they ignore.
   return family === 'id3' ? ['-id3v2_version', '3'] : [];

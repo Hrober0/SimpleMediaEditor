@@ -104,19 +104,6 @@ unchanged.
 
 ---
 
-## Batch audio normalization
-
-- Multi-file selection, one job per file through the shared queue.
-- **Two-pass** `loudnorm`: measure, then apply. Single pass is inaccurate; this
-  is not an optimization to skip.
-- Target EBU R128, default -14 LUFS (streaming-typical), configurable to -16 or
-  -23.
-- Per-file before and after LUFS reported, so the result is verifiable.
-- Write to an output folder or in place, using the same temp-then-replace path
-  every other write uses.
-
----
-
 ## Format support and conversion
 
 One table already drives the app (`SupportedFormat` in

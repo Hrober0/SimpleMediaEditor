@@ -16,6 +16,8 @@ export interface JobContext {
   setProgress(value: number | null): void;
   setDetail(detail: string): void;
   setOutputPath(path: string): void;
+  /** What the job's line says once it is done, in place of "Finished". */
+  setFinishedDetail(detail: string): void;
   /** Records a line of tool output verbatim for the error pane. */
   log(line: string): void;
 }
@@ -34,6 +36,7 @@ interface JobRecord {
   controller: AbortController;
   /** Set when cancellation was requested, so a rejection is not reported twice. */
   cancelRequested: boolean;
+  finishedDetail: string | null;
 }
 
 /** Progress lines arrive many times a second; the UI does not need every one. */
@@ -78,6 +81,7 @@ export class JobQueue {
       spec,
       controller: new AbortController(),
       cancelRequested: false,
+      finishedDetail: null,
     });
     this.notify({ immediate: true });
     this.pump();
@@ -141,7 +145,7 @@ export class JobQueue {
         this.finish(record, 'cancelled', 'Cancelled');
       } else {
         record.job.progress = 1;
-        this.finish(record, 'done', 'Finished');
+        this.finish(record, 'done', record.finishedDetail ?? 'Finished');
       }
     } catch (error) {
       if (record.cancelRequested) {
@@ -175,6 +179,9 @@ export class JobQueue {
       setOutputPath: (path) => {
         record.job.outputPath = path;
         this.notify();
+      },
+      setFinishedDetail: (detail) => {
+        record.finishedDetail = detail;
       },
       log: (line) => {
         appendLog(record.job, line);

@@ -79,6 +79,8 @@ src/
       safe-write.ts         temp sibling, verify, then replace: every write goes here
       waveform.ts           peaks for the Track Edit waveform
       trim-*.ts, keyframes.ts   cutting and joining for Track Edit export
+      normalize-*.ts, loudnorm-stats.ts   two-pass loudness normalization
+      audio-encoder.ts      the encoder for any re-encoded audio; keeps lossless bit depth
   preload/                contextBridge: the only surface the renderer can see
   shared/                 types and pure helpers imported by both sides
     ipc-contract.ts         every channel, typed; a drift is a compile error

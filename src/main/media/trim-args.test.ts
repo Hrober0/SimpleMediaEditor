@@ -5,7 +5,6 @@ import {
   buildConcatListContent,
   buildFastSegmentArgs,
   buildPreciseTrimArgs,
-  preciseAudioCodec,
   preciseVideoCodec,
 } from './trim-args';
 
@@ -122,6 +121,7 @@ describe('buildPreciseTrimArgs', () => {
       hasAudio: true,
       hasVideo: false,
       ext: 'mp3',
+      sourceAudio: null,
     });
 
     const filterIndex = args.indexOf('-filter_complex');
@@ -156,6 +156,7 @@ describe('buildPreciseTrimArgs', () => {
       hasAudio: true,
       hasVideo: true,
       ext: 'mp4',
+      sourceAudio: null,
     });
 
     expect(args).toEqual(
@@ -180,20 +181,39 @@ describe('buildPreciseTrimArgs', () => {
       hasAudio: true,
       hasVideo: false,
       ext: 'mp3',
+      sourceAudio: null,
     });
     expect(args).toEqual(expect.arrayContaining(['-map_metadata', '0']));
   });
+
+  it('keeps the bit depth of a 24-bit WAV instead of cutting it to 16', () => {
+    const args = buildPreciseTrimArgs({
+      sourcePath: 'in.wav',
+      outputPath: 'out.wav',
+      ranges: [{ startSeconds: 0, endSeconds: 1 }],
+      hasAudio: true,
+      hasVideo: false,
+      ext: 'wav',
+      sourceAudio: {
+        codec: 'pcm_s24le',
+        width: null,
+        height: null,
+        channels: 2,
+        sampleRate: 48_000,
+        bitrate: 2_304_000,
+        sampleFormat: 's32',
+      },
+    });
+    expect(args).toEqual(expect.arrayContaining(['-c:a', 'pcm_s24le']));
+  });
 });
 
-describe('preciseAudioCodec / preciseVideoCodec', () => {
+describe('preciseVideoCodec', () => {
   it('picks a codec the container can actually hold', () => {
-    expect(preciseAudioCodec('wav')).toBe('pcm_s16le');
-    expect(preciseAudioCodec('flac')).toBe('flac');
     expect(preciseVideoCodec('webm')).toBe('libvpx-vp9');
   });
 
   it('falls back to a sane default for an unlisted extension', () => {
-    expect(preciseAudioCodec('unknown')).toBe('aac');
     expect(preciseVideoCodec('unknown')).toBe('libx264');
   });
 });
